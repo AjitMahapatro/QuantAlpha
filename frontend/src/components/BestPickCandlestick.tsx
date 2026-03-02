@@ -176,7 +176,7 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
 
         {!prediction && (
           <div className="text-xs text-white/50 mt-4">
-            Prediction requires backend model runtime (xgboost). If it’s not installed, run: <span className="text-white/70">pip install -r backend/requirements.txt</span>
+            
           </div>
         )}
       </CardContent>
