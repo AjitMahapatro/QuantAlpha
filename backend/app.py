@@ -5,14 +5,14 @@ from fastapi.responses import JSONResponse
 import logging
 from datetime import date
 
-from services.portfolio_service import (
+from backend.services.portfolio_service import (
     run_portfolio_optimization,
     run_backtest,
     run_research,
     fetch_ohlc
 )
 
-from schemas.responses import BacktestResponse, PortfolioResponse, ResearchResponse
+from backend.schemas.responses import BacktestResponse, PortfolioResponse, ResearchResponse
 
 app = FastAPI(title="QuantAlpha API")
 
@@ -83,7 +83,7 @@ def predict(
     ticker: str = Query(default="AAPL", description="Single ticker"),
 ):
     try:
-        from services.inference_service import predict_ticker
+        from backend.services.inference_service import predict_ticker
 
         result = predict_ticker(ticker)
         if result is None:
