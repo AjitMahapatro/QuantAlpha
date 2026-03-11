@@ -111,7 +111,21 @@ function App() {
       else timeoutMs = 30000;
 
       const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
-      if (snapshot) {
+      const hasSignalData = (s: ISignals | null | undefined) => {
+        if (!s) return false;
+        return Object.values(s).some((v) => (v['1D'] ?? 0) !== 0 || (v['5D'] ?? 0) !== 0 || (v['20D'] ?? 0) !== 0);
+      };
+
+      const isMeaningfulSnapshot = snapshot
+        && (
+          snapshot.backtest.dates.length > 0
+          || snapshot.portfolio.expected_return !== 0
+          || snapshot.portfolio.volatility !== 0
+          || snapshot.portfolio.sharpe_ratio !== 0
+          || hasSignalData(snapshot.signals)
+        );
+
+      if (isMeaningfulSnapshot) {
         if (requestId !== latestRequestIdRef.current) return;
         setPortfolioData(snapshot.portfolio);
         setBacktestData(snapshot.backtest);
