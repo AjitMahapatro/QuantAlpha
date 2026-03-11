@@ -1,18 +1,26 @@
 import math
 from functools import lru_cache
+from pathlib import Path
 
 import joblib
 
-from config import FEATURE_COLUMNS
-from services.data_service import fetch_market_data
-from services.feature_engineering import create_features
+try:
+    from backend.config import FEATURE_COLUMNS
+    from backend.services.data_service import fetch_market_data
+    from backend.services.feature_engineering import create_features
+except ModuleNotFoundError:
+    from config import FEATURE_COLUMNS
+    from services.data_service import fetch_market_data
+    from services.feature_engineering import create_features
+
+MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
 
 
 @lru_cache(maxsize=1)
 def _load_models():
-    model_1d = joblib.load("models/alpha_1d.pkl")
-    model_5d = joblib.load("models/alpha_5d.pkl")
-    model_20d = joblib.load("models/alpha_20d.pkl")
+    model_1d = joblib.load(MODELS_DIR / "alpha_1d.pkl")
+    model_5d = joblib.load(MODELS_DIR / "alpha_5d.pkl")
+    model_20d = joblib.load(MODELS_DIR / "alpha_20d.pkl")
     return model_1d, model_5d, model_20d
 
 

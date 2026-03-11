@@ -4,12 +4,37 @@ import numpy as np
 from functools import lru_cache
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
-from config import TICKERS, BENCHMARK, START_DATE, END_DATE
+try:
+    from backend.config import TICKERS, BENCHMARK, START_DATE, END_DATE
+except ModuleNotFoundError:
+    from config import TICKERS, BENCHMARK, START_DATE, END_DATE
+
+try:
+    _TZ_CACHE_DIR = Path(__file__).resolve().parent.parent / ".yfinance_tz_cache"
+    _TZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    yf.set_tz_cache_location(str(_TZ_CACHE_DIR))
+except Exception:
+    pass
 
 # ===============================
 # DATA FETCHING
 # ===============================
+
+_YF_TIMEOUT_SECONDS = 4
+
+
+def _download_yf_with_timeout(*args, **kwargs):
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(yf.download, *args, **kwargs)
+    try:
+        return fut.result(timeout=_YF_TIMEOUT_SECONDS)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
 
 @lru_cache(maxsize=16)
 def fetch_market_data(tickers: tuple[str, ...], start: str, end: str):
@@ -69,27 +94,21 @@ def fetch_market_data(tickers: tuple[str, ...], start: str, end: str):
     if not stooq_prices.empty and stooq_prices.shape[0] >= 10:
         return stooq_prices.sort_index(), stooq_bench
 
-    try:
-        stock_data = yf.download(
-            list(tickers),
-            start=start,
-            end=end,
-            auto_adjust=True,
-            progress=False
-        )
-    except Exception:
-        stock_data = pd.DataFrame()
+    stock_data = _download_yf_with_timeout(
+        list(tickers),
+        start=start,
+        end=end,
+        auto_adjust=True,
+        progress=False,
+    )
 
-    try:
-        benchmark_data = yf.download(
-            BENCHMARK,
-            start=start,
-            end=end,
-            auto_adjust=True,
-            progress=False
-        )
-    except Exception:
-        benchmark_data = pd.DataFrame()
+    benchmark_data = _download_yf_with_timeout(
+        BENCHMARK,
+        start=start,
+        end=end,
+        auto_adjust=True,
+        progress=False,
+    )
 
     if stock_data is None or getattr(stock_data, "empty", True):
         # Fallback to Stooq
@@ -173,7 +192,7 @@ def fetch_ohlc(ticker: str, start: str, end: str, interval: str):
 
         url = f"https://stooq.com/q/d/l/?s={_stooq_symbol(ticker)}&i=d"
         try:
-            resp = requests.get(url, timeout=15)
+            resp = requests.get(url, timeout=4)
             resp.raise_for_status()
             df = pd.read_csv(pd.io.common.StringIO(resp.text))
         except Exception:
@@ -206,17 +225,14 @@ def fetch_ohlc(ticker: str, start: str, end: str, interval: str):
                         "volume": (df["Volume"].fillna(0).astype(float).round(0).tolist() if "Volume" in df.columns else [0.0] * len(df)),
                     }
 
-    try:
-        data = yf.download(
-            ticker,
-            start=start,
-            end=end,
-            interval=interval,
-            auto_adjust=False,
-            progress=False,
-        )
-    except Exception:
-        data = pd.DataFrame()
+    data = _download_yf_with_timeout(
+        ticker,
+        start=start,
+        end=end,
+        interval=interval,
+        auto_adjust=False,
+        progress=False,
+    )
 
     if isinstance(data.columns, pd.MultiIndex):
         if ticker in data.columns.get_level_values(-1):
@@ -416,7 +432,22 @@ def run_research(tickers: list[str] | None = None, start: str | None = None, end
             "1D": round(float(series.tail(1).mean() * 100), 2),
             "5D": round(float(series.tail(5).mean() * 100), 2),
             "20D": round(float(series.tail(20).mean() * 100), 2),
-            "Confidence": round(float(np.random.uniform(60, 95)), 2)
+            "Confidence": 0.0,
         }
+
+    for ticker, vals in signals.items():
+        s1 = vals["1D"]
+        s5 = vals["5D"]
+        s20 = vals["20D"]
+        signs = [np.sign(s1), np.sign(s5), np.sign(s20)]
+        non_zero = [s for s in signs if s != 0]
+        if not non_zero:
+            vals["Confidence"] = 0.0
+            continue
+
+        agreement = abs(sum(non_zero)) / len(non_zero)
+        magnitude = min((abs(s1) * 0.2 + abs(s5) * 0.35 + abs(s20) * 0.45), 8.0) / 8.0
+        confidence = (0.65 * agreement + 0.35 * magnitude) * 100.0
+        vals["Confidence"] = round(float(np.clip(confidence, 1.0, 99.0)), 2)
 
     return signals

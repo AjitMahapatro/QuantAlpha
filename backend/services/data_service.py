@@ -5,7 +5,32 @@ import pandas as pd
 import requests
 from io import StringIO
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from config import TICKERS, BENCHMARK, START_DATE, END_DATE
+from pathlib import Path
+try:
+    from backend.config import TICKERS, BENCHMARK, START_DATE, END_DATE
+except ModuleNotFoundError:
+    from config import TICKERS, BENCHMARK, START_DATE, END_DATE
+
+try:
+    _TZ_CACHE_DIR = Path(__file__).resolve().parent.parent / ".yfinance_tz_cache"
+    _TZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    yf.set_tz_cache_location(str(_TZ_CACHE_DIR))
+except Exception:
+    pass
+
+_YF_TIMEOUT_SECONDS = 4
+
+
+def _download_yf_with_timeout(*args, **kwargs):
+    ex = ThreadPoolExecutor(max_workers=1)
+    fut = ex.submit(yf.download, *args, **kwargs)
+    try:
+        return fut.result(timeout=_YF_TIMEOUT_SECONDS)
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)
+
 
 def fetch_market_data():
 
@@ -81,15 +106,21 @@ def fetch_market_data():
     if not close.empty and pd.to_numeric(close["Close"], errors="coerce").dropna().shape[0] >= 200:
         return close, sp
 
-    try:
-        data = yf.download(TICKERS, start=START_DATE, end=END_DATE, auto_adjust=True, progress=False)
-    except Exception:
-        data = pd.DataFrame()
+    data = _download_yf_with_timeout(
+        TICKERS,
+        start=START_DATE,
+        end=END_DATE,
+        auto_adjust=True,
+        progress=False,
+    )
 
-    try:
-        sp500 = yf.download(BENCHMARK, start=START_DATE, end=END_DATE, auto_adjust=True, progress=False)
-    except Exception:
-        sp500 = pd.DataFrame()
+    sp500 = _download_yf_with_timeout(
+        BENCHMARK,
+        start=START_DATE,
+        end=END_DATE,
+        auto_adjust=True,
+        progress=False,
+    )
 
     if data is None or getattr(data, "empty", True):
         close = pd.DataFrame(columns=["Date", "Ticker", "Close"])

@@ -5,14 +5,22 @@ from fastapi.responses import JSONResponse
 import logging
 from datetime import date
 
-from backend.services.portfolio_service import (
-    run_portfolio_optimization,
-    run_backtest,
-    run_research,
-    fetch_ohlc
-)
-
-from backend.schemas.responses import BacktestResponse, PortfolioResponse, ResearchResponse
+try:
+    from backend.services.portfolio_service import (
+        run_portfolio_optimization,
+        run_backtest,
+        run_research,
+        fetch_ohlc,
+    )
+    from backend.schemas.responses import BacktestResponse, PortfolioResponse, ResearchResponse
+except ModuleNotFoundError:
+    from services.portfolio_service import (
+        run_portfolio_optimization,
+        run_backtest,
+        run_research,
+        fetch_ohlc,
+    )
+    from schemas.responses import BacktestResponse, PortfolioResponse, ResearchResponse
 
 app = FastAPI(title="QuantAlpha API")
 
@@ -83,7 +91,10 @@ def predict(
     ticker: str = Query(default="AAPL", description="Single ticker"),
 ):
     try:
-        from backend.services.inference_service import predict_ticker
+        try:
+            from backend.services.inference_service import predict_ticker
+        except ModuleNotFoundError:
+            from services.inference_service import predict_ticker
 
         result = predict_ticker(ticker)
         if result is None:
@@ -139,6 +150,27 @@ def research(
             detail="Research failed",
         ) from exc
 
+
+@app.get("/snapshot")
+def snapshot(
+    tickers: str | None = Query(default=None, description="Comma-separated tickers"),
+    start_date: str | None = Query(default=None, description="YYYY-MM-DD"),
+    end_date: str | None = Query(default=None, description="YYYY-MM-DD"),
+):
+    try:
+        parsed = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else None
+        return {
+            "portfolio": run_portfolio_optimization(parsed, start_date, end_date),
+            "backtest": run_backtest(parsed, start_date, end_date),
+            "signals": run_research(parsed, start_date, end_date),
+        }
+    except Exception as exc:
+        logger.exception("Snapshot endpoint failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Snapshot failed",
+        ) from exc
+
 @app.get("/ohlc")
 def ohlc(
     ticker: str = Query(default="AAPL", description="Single ticker"),
@@ -147,7 +179,10 @@ def ohlc(
     interval: str = Query(default="1d", description="yfinance interval (e.g. 1d, 1h)"),
 ):
     try:
-        from config import START_DATE, END_DATE
+        try:
+            from backend.config import START_DATE, END_DATE
+        except ModuleNotFoundError:
+            from config import START_DATE, END_DATE
 
         start = start_date or START_DATE
         end = end_date or END_DATE

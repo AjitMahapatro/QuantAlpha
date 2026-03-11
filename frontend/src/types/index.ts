@@ -46,6 +46,12 @@ export interface ResearchResponse {
   signals: ResearchSignals;
 }
 
+export interface SnapshotResponse {
+  portfolio: PortfolioData;
+  backtest: BacktestData;
+  signals: ResearchSignals;
+}
+
 export interface ApiResponse<T = any> {
   data?: T;
   error?: string;

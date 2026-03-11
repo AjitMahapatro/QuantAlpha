@@ -1,23 +1,31 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PortfolioOverview } from './components/PortfolioOverview';
 import { BacktestChart } from './components/BacktestChart';
 import { ResearchSignalsComponent } from './components/ResearchSignals';
 import { BestPick } from './components/BestPick';
-import { BestPickCandlestick } from './components/BestPickCandlestick';
+import { MarketPulsePanel } from './components/MarketPulsePanel';
 import { Header, type HeaderPage } from './components/Header';
 import { LoadingSpinner } from './components/LoadingSpinner';
 import { apiService } from './services/api';
 import { PortfolioData, BacktestData, ResearchSignals as ISignals } from './types';
 import Plot from 'react-plotly.js';
-import { computePick } from './utils/pickUtils';
 
 function App() {
+  const DEFAULT_FAST_TICKERS = 'AAPL,MSFT,NVDA,JPM,GS,JNJ,PFE,PG,KO,XOM';
+  const PRESET_UNIVERSES: Record<string, string> = {
+    'US 10 (Recommended)': DEFAULT_FAST_TICKERS,
+    'Big Tech': 'AAPL,MSFT,NVDA,GOOGL,AMZN,META,TSLA',
+    'Defensive': 'JNJ,PFE,PG,KO,PEP,WMT,COST',
+  };
+
   const [activePage, setActivePage] = useState<HeaderPage>('dashboard');
   const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
   const [backtestData, setBacktestData] = useState<BacktestData | null>(null);
   const [signalsData, setSignalsData] = useState<ISignals | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasVisibleDataRef = useRef(false);
+  const isFetchingRef = useRef(false);
 
   const [appliedSettings, setAppliedSettings] = useState({
     tickers: '',
@@ -33,43 +41,130 @@ function App() {
     refreshSeconds: 0,
   });
 
-  const [ohlc, setOhlc] = useState<{
-    dates: string[];
-    open: number[];
-    high: number[];
-    low: number[];
-    close: number[];
-    volume: number[];
-  } | null>(null);
+  const readCachedSnapshot = () => {
+    try {
+      const raw = window.localStorage.getItem('qa_last_snapshot');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { portfolio: PortfolioData; backtest: BacktestData; signals: ISignals };
+      const signalCount = Object.keys(parsed?.signals || {}).length;
+      // Ignore old cache generated from previous 3-ticker defaults.
+      if (signalCount > 0 && signalCount < 10) {
+        window.localStorage.removeItem('qa_last_snapshot');
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
 
   const fetchData = useCallback(async () => {
+    if (isFetchingRef.current) {
+      return;
+    }
+    isFetchingRef.current = true;
+
+    const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
+      new Promise((resolve) => {
+        const id = window.setTimeout(() => resolve(null), ms);
+        promise
+          .then((value) => {
+            window.clearTimeout(id);
+            resolve(value);
+          })
+          .catch(() => {
+            window.clearTimeout(id);
+            resolve(null);
+          });
+      });
+
     try {
       setLoading(true);
       setError(null);
 
-      const params = {
+      const isBlankSettings =
+        !appliedSettings.tickers?.trim() &&
+        !appliedSettings.start_date?.trim() &&
+        !appliedSettings.end_date?.trim();
+
+      let params = {
         tickers: appliedSettings.tickers || undefined,
         start_date: appliedSettings.start_date || undefined,
         end_date: appliedSettings.end_date || undefined,
       };
+      let timeoutMs = 10000;
 
-      const [portfolio, backtest, signals] = await Promise.all([
-        apiService.getPortfolio(params),
-        apiService.getBacktest(params),
-        apiService.getResearch(params)
-      ]);
+      // Keep UI defaults blank, but use a fast query profile in the background
+      // when nothing is specified by the user.
+      if (isBlankSettings) {
+        const today = new Date();
+        const end = today.toISOString().slice(0, 10);
+        const start = new Date(today.getFullYear(), today.getMonth() - 4, today.getDate())
+          .toISOString()
+          .slice(0, 10);
+        params = {
+          tickers: DEFAULT_FAST_TICKERS,
+          start_date: start,
+          end_date: end,
+        };
+        timeoutMs = 30000;
+      } else {
+        const startMs = params.start_date ? Date.parse(params.start_date) : NaN;
+        const endMs = params.end_date ? Date.parse(params.end_date) : NaN;
+        const years =
+          Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
+            ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
+            : 1;
 
-      setPortfolioData(portfolio);
-      setBacktestData(backtest);
-      setSignalsData(signals);
+        if (years >= 15) timeoutMs = 120000;
+        else if (years >= 10) timeoutMs = 90000;
+        else if (years >= 5) timeoutMs = 60000;
+        else if (years >= 2) timeoutMs = 45000;
+        else timeoutMs = 30000;
+      }
+
+      const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
+      if (snapshot) {
+        setPortfolioData(snapshot.portfolio);
+        setBacktestData(snapshot.backtest);
+        setSignalsData(snapshot.signals);
+        window.localStorage.setItem('qa_last_snapshot', JSON.stringify(snapshot));
+        setError(null);
+      } else {
+        if (hasVisibleDataRef.current) {
+          // Keep dashboard stable; do not show noisy timeout banner over valid visible data.
+          setError(null);
+        } else {
+          const cached = readCachedSnapshot();
+          if (cached) {
+            setPortfolioData(cached.portfolio);
+            setBacktestData(cached.backtest);
+            setSignalsData(cached.signals);
+            setError(`Live data timed out at ${Math.round(timeoutMs / 1000)}s. Showing cached snapshot.`);
+          } else {
+            setError(`Timed out at ${Math.round(timeoutMs / 1000)}s. Reduce date range/tickers.`);
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
     }
   }, [appliedSettings.tickers, appliedSettings.start_date, appliedSettings.end_date]);
 
   useEffect(() => {
+    hasVisibleDataRef.current = Boolean(portfolioData || backtestData || signalsData);
+  }, [portfolioData, backtestData, signalsData]);
+
+  useEffect(() => {
+    const cached = readCachedSnapshot();
+    if (cached) {
+      setPortfolioData(cached.portfolio);
+      setBacktestData(cached.backtest);
+      setSignalsData(cached.signals);
+    }
     fetchData();
   }, [fetchData]);
 
@@ -80,19 +175,6 @@ function App() {
     }, appliedSettings.refreshSeconds * 1000);
     return () => window.clearInterval(id);
   }, [appliedSettings.refreshSeconds, fetchData]);
-
-  useEffect(() => {
-    const ticker = (appliedSettings.tickers || 'AAPL').split(',')[0]?.trim() || 'AAPL';
-    const params = {
-      ticker,
-      start_date: appliedSettings.start_date || undefined,
-      end_date: appliedSettings.end_date || undefined,
-      interval: '1d',
-    };
-    apiService.getOhlc(params)
-      .then(setOhlc)
-      .catch(() => setOhlc(null));
-  }, [appliedSettings.tickers, appliedSettings.start_date, appliedSettings.end_date]);
 
   const computeDrawdown = (curve: number[]) => {
     let peak = -Infinity;
@@ -121,38 +203,86 @@ function App() {
     return out;
   };
 
-  if (loading) {
-    return <LoadingSpinner />;
-  }
+  const hasData = Boolean(portfolioData || backtestData || signalsData);
+  const showSkeleton = loading && !hasData;
 
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-bg flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Error</h1>
-          <p className="text-red-400">{error}</p>
-        </div>
-      </div>
-    );
-  }
+  const applyDatePresetYears = (years: number) => {
+    const today = new Date();
+    const end = today.toISOString().slice(0, 10);
+    const start = new Date(today.getFullYear() - years, today.getMonth(), today.getDate())
+      .toISOString()
+      .slice(0, 10);
+    setDraftSettings((s) => ({ ...s, start_date: start, end_date: end }));
+  };
+
+  const normalizeTickers = (raw: string) =>
+    raw
+      .split(',')
+      .map((t) => t.trim().toUpperCase())
+      .filter(Boolean)
+      .join(',');
+
+  const getDatePresetRange = (years: number) => {
+    const today = new Date();
+    const end = today.toISOString().slice(0, 10);
+    const start = new Date(today.getFullYear() - years, today.getMonth(), today.getDate())
+      .toISOString()
+      .slice(0, 10);
+    return { start, end };
+  };
+
+  const presetButtonClass = (selected: boolean) =>
+    selected
+      ? 'px-3 py-1.5 rounded-lg text-xs border border-cyan-300/50 bg-cyan-500/20 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
+      : 'px-3 py-1.5 rounded-lg text-xs border border-white/15 bg-white/5 hover:bg-white/10 text-white/80';
+
+  const applySmartDefaults = () => {
+    applyDatePresetYears(1);
+    setDraftSettings((s) => ({
+      ...s,
+      tickers: DEFAULT_FAST_TICKERS,
+      refreshSeconds: 60,
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-gradient-bg">
       <Header activePage={activePage} onNavigate={setActivePage} />
       <main className="container mx-auto px-4 py-8">
+        {error && (
+          <div className="mb-6 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-red-200">
+            {error}
+          </div>
+        )}
         {activePage === 'dashboard' && (
           <div className="space-y-8 animate-fade-in-up">
-            {signalsData && <BestPick signals={signalsData} />}
-            {signalsData && computePick(signalsData) && (
-              <BestPickCandlestick
-                ticker={computePick(signalsData)!.ticker}
-                startDate={appliedSettings.start_date || undefined}
-                endDate={appliedSettings.end_date || undefined}
-              />
+            {showSkeleton && (
+              <>
+                <LoadingSpinner />
+                <div className="glass-effect rounded-xl p-6 border border-white/10 animate-pulse">
+                  <div className="h-8 w-56 bg-white/10 rounded mb-6"></div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="h-16 bg-white/10 rounded-xl"></div>
+                    <div className="h-16 bg-white/10 rounded-xl"></div>
+                    <div className="h-16 bg-white/10 rounded-xl"></div>
+                  </div>
+                </div>
+                <div className="glass-effect rounded-xl p-6 border border-white/10 animate-pulse">
+                  <div className="h-6 w-44 bg-white/10 rounded mb-4"></div>
+                  <div className="h-64 bg-white/10 rounded-xl"></div>
+                </div>
+              </>
             )}
+            {signalsData && <BestPick signals={signalsData} />}
+            {signalsData && <MarketPulsePanel signals={signalsData} />}
             {portfolioData && <PortfolioOverview data={portfolioData} />}
             {backtestData && <BacktestChart data={backtestData} />}
             {signalsData && <ResearchSignalsComponent data={signalsData} />}
+            {!signalsData && !portfolioData && !backtestData && !showSkeleton && (
+              <div className="glass-effect rounded-lg p-6 border border-white/10 text-white/80">
+                No data loaded in 10s. Open Settings and reduce date range/tickers, then click Apply.
+              </div>
+            )}
           </div>
         )}
 
@@ -233,66 +363,6 @@ function App() {
               </div>
             )}
 
-            {ohlc && ohlc.dates.length > 0 && (
-              <div className="glass-effect rounded-lg p-6 border border-white/10">
-                <h3 className="text-lg font-semibold text-white mb-4">Candlestick (1D) - {((appliedSettings.tickers || 'AAPL').split(',')[0] || 'AAPL').trim().toUpperCase()}</h3>
-                <div className="h-[28rem]">
-                  <Plot
-                    data={[
-                      {
-                        x: ohlc.dates,
-                        open: ohlc.open,
-                        high: ohlc.high,
-                        low: ohlc.low,
-                        close: ohlc.close,
-                        type: 'candlestick',
-                        name: 'OHLC',
-                        increasing: { line: { color: 'rgba(34,197,94,1)' } },
-                        decreasing: { line: { color: 'rgba(239,68,68,1)' } },
-                      },
-                    ] as any}
-                    layout={{
-                      autosize: true,
-                      paper_bgcolor: 'rgba(0,0,0,0)',
-                      plot_bgcolor: 'rgba(0,0,0,0)',
-                      margin: { l: 48, r: 18, t: 10, b: 40 },
-                      xaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      yaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      showlegend: false,
-                    } as any}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
-
-                <div className="h-56 mt-6">
-                  <Plot
-                    data={[
-                      {
-                        x: ohlc.dates,
-                        y: ohlc.volume,
-                        type: 'bar',
-                        name: 'Volume',
-                        marker: { color: 'rgba(148,163,184,0.6)' },
-                      },
-                    ] as any}
-                    layout={{
-                      autosize: true,
-                      paper_bgcolor: 'rgba(0,0,0,0)',
-                      plot_bgcolor: 'rgba(0,0,0,0)',
-                      margin: { l: 48, r: 18, t: 10, b: 40 },
-                      xaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      yaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      showlegend: false,
-                    } as any}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -300,7 +370,60 @@ function App() {
           <div className="space-y-8 animate-fade-in-up">
             <div className="glass-effect rounded-lg p-6 border border-white/10 hover-glow">
               <h2 className="text-2xl font-bold text-white">Settings</h2>
-              <p className="text-white/70 mt-2">Edit values, then click Apply. No more refresh on every keypress.</p>
+              <p className="text-white/70 mt-2">Edit values, use presets, then click Apply.</p>
+
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+                  <div className="text-sm font-semibold text-white mb-3">Universe Presets</div>
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(PRESET_UNIVERSES).map(([label, tickers]) => (
+                      <button
+                        key={label}
+                        type="button"
+                        className={presetButtonClass(normalizeTickers(draftSettings.tickers) === normalizeTickers(tickers))}
+                        onClick={() => setDraftSettings((s) => ({ ...s, tickers }))}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+                  <div className="text-sm font-semibold text-white mb-3">Date Presets</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[1, 3, 5, 10, 20].map((y) => (
+                      <button
+                        key={y}
+                        type="button"
+                        className={presetButtonClass(
+                          draftSettings.start_date === getDatePresetRange(y).start &&
+                          draftSettings.end_date === getDatePresetRange(y).end
+                        )}
+                        onClick={() => applyDatePresetYears(y)}
+                      >
+                        {y}Y
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+                  <div className="text-sm font-semibold text-white mb-3">Refresh Presets</div>
+                  <div className="flex flex-wrap gap-2">
+                    {[0, 30, 60, 120].map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        className={presetButtonClass(draftSettings.refreshSeconds === s)}
+                        onClick={() => setDraftSettings((d) => ({ ...d, refreshSeconds: s }))}
+                      >
+                        {s === 0 ? 'Off' : `${s}s`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
                 <div>
@@ -349,8 +472,25 @@ function App() {
               <div className="flex items-center gap-3 mt-6">
                 <button
                   type="button"
+                  className={presetButtonClass(
+                    normalizeTickers(draftSettings.tickers) === normalizeTickers(DEFAULT_FAST_TICKERS) &&
+                    (() => {
+                      const r = getDatePresetRange(1);
+                      return draftSettings.start_date === r.start && draftSettings.end_date === r.end;
+                    })() &&
+                    draftSettings.refreshSeconds === 60
+                  )}
+                  onClick={applySmartDefaults}
+                >
+                  Smart Defaults
+                </button>
+                <button
+                  type="button"
                   className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/20 text-white border border-white/20"
-                  onClick={() => setAppliedSettings({ ...draftSettings })}
+                  onClick={() => {
+                    setAppliedSettings({ ...draftSettings });
+                    setActivePage('dashboard');
+                  }}
                 >
                   Apply
                 </button>
@@ -374,7 +514,7 @@ function App() {
               </div>
 
               <div className="mt-6 text-sm text-white/60">
-                Tip: leave fields blank to use backend defaults.
+                Tip: Smart Defaults = 10-ticker universe + 1Y range + 60s refresh.
               </div>
             </div>
           </div>
