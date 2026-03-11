@@ -35,6 +35,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const hasVisibleDataRef = useRef(false);
   const latestRequestIdRef = useRef(0);
+  const lastLoadedQueryRef = useRef('');
 
   const [appliedSettings, setAppliedSettings] = useState(() => ({
     tickers: DEFAULT_FAST_TICKERS,
@@ -93,6 +94,7 @@ function App() {
         start_date: appliedSettings.start_date || undefined,
         end_date: appliedSettings.end_date || undefined,
       };
+      const queryKey = JSON.stringify(params);
       let timeoutMs = 10000;
 
       const startMs = params.start_date ? Date.parse(params.start_date) : NaN;
@@ -114,13 +116,20 @@ function App() {
         setPortfolioData(snapshot.portfolio);
         setBacktestData(snapshot.backtest);
         setSignalsData(snapshot.signals);
+        lastLoadedQueryRef.current = queryKey;
         window.localStorage.setItem('qa_last_snapshot', JSON.stringify(snapshot));
         setError(null);
       } else {
         if (requestId !== latestRequestIdRef.current) return;
         if (hasVisibleDataRef.current) {
-          // Keep dashboard stable; do not show noisy timeout banner over valid visible data.
-          setError(null);
+          // If user changed settings and load failed, tell them dashboard is still old data.
+          if (queryKey !== lastLoadedQueryRef.current) {
+            setError(
+              `Could not load new settings in ${Math.round(timeoutMs / 1000)}s. Dashboard is still showing previous loaded range.`
+            );
+          } else {
+            setError(null);
+          }
         } else {
           const cached = readCachedSnapshot();
           if (cached) {
