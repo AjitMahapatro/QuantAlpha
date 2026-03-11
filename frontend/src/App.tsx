@@ -131,14 +131,21 @@ function App() {
             setError(null);
           }
         } else {
-          const cached = readCachedSnapshot();
-          if (cached) {
-            setPortfolioData(cached.portfolio);
-            setBacktestData(cached.backtest);
-            setSignalsData(cached.signals);
-            setError(`Live data timed out at ${Math.round(timeoutMs / 1000)}s. Showing cached snapshot.`);
+          // For a new query, do not silently show old cached data.
+          if (queryKey !== lastLoadedQueryRef.current) {
+            setError(
+              `Could not load new settings in ${Math.round(timeoutMs / 1000)}s. No fresh data available for this range yet.`
+            );
           } else {
-            setError(`Timed out at ${Math.round(timeoutMs / 1000)}s. Reduce date range/tickers.`);
+            const cached = readCachedSnapshot();
+            if (cached) {
+              setPortfolioData(cached.portfolio);
+              setBacktestData(cached.backtest);
+              setSignalsData(cached.signals);
+              setError(`Live data timed out at ${Math.round(timeoutMs / 1000)}s. Showing cached snapshot.`);
+            } else {
+              setError(`Timed out at ${Math.round(timeoutMs / 1000)}s. Reduce date range/tickers.`);
+            }
           }
         }
       }
@@ -486,6 +493,12 @@ function App() {
                   type="button"
                   className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/20 text-white border border-white/20"
                   onClick={() => {
+                    // Clear visible cards so stale values are never confused as newly applied settings.
+                    setPortfolioData(null);
+                    setBacktestData(null);
+                    setSignalsData(null);
+                    setLoading(true);
+                    setError(null);
                     setAppliedSettings({ ...draftSettings });
                     setActivePage('dashboard');
                   }}
@@ -512,7 +525,7 @@ function App() {
               </div>
 
               <div className="mt-6 text-sm text-white/60">
-                Tip: Smart Defaults = 10-ticker universe + 1Y range + 60s refresh.
+                Tip: Smart Defaults = 3-ticker universe + 1Y range + 60s refresh.
               </div>
             </div>
           </div>
