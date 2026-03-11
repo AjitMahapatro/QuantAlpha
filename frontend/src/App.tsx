@@ -222,9 +222,6 @@ function App() {
     return out;
   };
 
-  const hasData = Boolean(portfolioData || backtestData || signalsData);
-  const showSkeleton = loading && !hasData;
-
   const applyDatePresetYears = (years: number) => {
     const today = new Date();
     const end = today.toISOString().slice(0, 10);
@@ -264,6 +261,14 @@ function App() {
     }));
   };
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-bg">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-bg">
       <Header activePage={activePage} onNavigate={setActivePage} />
@@ -275,29 +280,12 @@ function App() {
         )}
         {activePage === 'dashboard' && (
           <div className="space-y-8 animate-fade-in-up">
-            {showSkeleton && (
-              <>
-                <LoadingSpinner />
-                <div className="glass-effect rounded-xl p-6 border border-white/10 animate-pulse">
-                  <div className="h-8 w-56 bg-white/10 rounded mb-6"></div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="h-16 bg-white/10 rounded-xl"></div>
-                    <div className="h-16 bg-white/10 rounded-xl"></div>
-                    <div className="h-16 bg-white/10 rounded-xl"></div>
-                  </div>
-                </div>
-                <div className="glass-effect rounded-xl p-6 border border-white/10 animate-pulse">
-                  <div className="h-6 w-44 bg-white/10 rounded mb-4"></div>
-                  <div className="h-64 bg-white/10 rounded-xl"></div>
-                </div>
-              </>
-            )}
             {signalsData && <BestPick signals={signalsData} />}
             {signalsData && <MarketPulsePanel signals={signalsData} />}
             {portfolioData && <PortfolioOverview data={portfolioData} />}
             {backtestData && <BacktestChart data={backtestData} />}
             {signalsData && <ResearchSignalsComponent data={signalsData} />}
-            {!signalsData && !portfolioData && !backtestData && !showSkeleton && (
+            {!signalsData && !portfolioData && !backtestData && (
               <div className="glass-effect rounded-lg p-6 border border-white/10 text-white/80">
                 No data loaded in 10s. Open Settings and reduce date range/tickers, then click Apply.
               </div>
