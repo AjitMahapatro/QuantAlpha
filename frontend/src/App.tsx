@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PortfolioOverview } from './components/PortfolioOverview';
 import { BacktestChart } from './components/BacktestChart';
 import { ResearchSignalsComponent } from './components/ResearchSignals';
@@ -11,12 +11,21 @@ import { PortfolioData, BacktestData, ResearchSignals as ISignals } from './type
 import Plot from 'react-plotly.js';
 
 function App() {
-  const DEFAULT_FAST_TICKERS = 'AAPL,MSFT,NVDA,JPM,GS,JNJ,PFE,PG,KO,XOM';
+  const DEFAULT_FAST_TICKERS = 'AAPL,MSFT,NVDA';
   const PRESET_UNIVERSES: Record<string, string> = {
-    'US 10 (Recommended)': DEFAULT_FAST_TICKERS,
+    'US 3 (Recommended)': DEFAULT_FAST_TICKERS,
+    'US 10': 'AAPL,MSFT,NVDA,JPM,GS,JNJ,PFE,PG,KO,XOM',
     'Big Tech': 'AAPL,MSFT,NVDA,GOOGL,AMZN,META,TSLA',
     'Defensive': 'JNJ,PFE,PG,KO,PEP,WMT,COST',
   };
+  const defaultDateRange = useMemo(() => {
+    const today = new Date();
+    const end = today.toISOString().slice(0, 10);
+    const start = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())
+      .toISOString()
+      .slice(0, 10);
+    return { start, end };
+  }, []);
 
   const [activePage, setActivePage] = useState<HeaderPage>('dashboard');
   const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
@@ -27,19 +36,19 @@ function App() {
   const hasVisibleDataRef = useRef(false);
   const isFetchingRef = useRef(false);
 
-  const [appliedSettings, setAppliedSettings] = useState({
-    tickers: '',
-    start_date: '',
-    end_date: '',
-    refreshSeconds: 0,
-  });
+  const [appliedSettings, setAppliedSettings] = useState(() => ({
+    tickers: DEFAULT_FAST_TICKERS,
+    start_date: defaultDateRange.start,
+    end_date: defaultDateRange.end,
+    refreshSeconds: 60,
+  }));
 
-  const [draftSettings, setDraftSettings] = useState({
-    tickers: '',
-    start_date: '',
-    end_date: '',
-    refreshSeconds: 0,
-  });
+  const [draftSettings, setDraftSettings] = useState(() => ({
+    tickers: DEFAULT_FAST_TICKERS,
+    start_date: defaultDateRange.start,
+    end_date: defaultDateRange.end,
+    refreshSeconds: 60,
+  }));
 
   const readCachedSnapshot = () => {
     try {
@@ -82,46 +91,25 @@ function App() {
       setLoading(true);
       setError(null);
 
-      const isBlankSettings =
-        !appliedSettings.tickers?.trim() &&
-        !appliedSettings.start_date?.trim() &&
-        !appliedSettings.end_date?.trim();
-
-      let params = {
+      const params = {
         tickers: appliedSettings.tickers || undefined,
         start_date: appliedSettings.start_date || undefined,
         end_date: appliedSettings.end_date || undefined,
       };
       let timeoutMs = 10000;
 
-      // Keep UI defaults blank, but use a fast query profile in the background
-      // when nothing is specified by the user.
-      if (isBlankSettings) {
-        const today = new Date();
-        const end = today.toISOString().slice(0, 10);
-        const start = new Date(today.getFullYear(), today.getMonth() - 4, today.getDate())
-          .toISOString()
-          .slice(0, 10);
-        params = {
-          tickers: DEFAULT_FAST_TICKERS,
-          start_date: start,
-          end_date: end,
-        };
-        timeoutMs = 30000;
-      } else {
-        const startMs = params.start_date ? Date.parse(params.start_date) : NaN;
-        const endMs = params.end_date ? Date.parse(params.end_date) : NaN;
-        const years =
-          Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
-            ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
-            : 1;
+      const startMs = params.start_date ? Date.parse(params.start_date) : NaN;
+      const endMs = params.end_date ? Date.parse(params.end_date) : NaN;
+      const years =
+        Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
+          ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
+          : 1;
 
-        if (years >= 15) timeoutMs = 120000;
-        else if (years >= 10) timeoutMs = 90000;
-        else if (years >= 5) timeoutMs = 60000;
-        else if (years >= 2) timeoutMs = 45000;
-        else timeoutMs = 30000;
-      }
+      if (years >= 15) timeoutMs = 120000;
+      else if (years >= 10) timeoutMs = 90000;
+      else if (years >= 5) timeoutMs = 60000;
+      else if (years >= 2) timeoutMs = 45000;
+      else timeoutMs = 30000;
 
       const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
       if (snapshot) {
