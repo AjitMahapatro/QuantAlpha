@@ -34,7 +34,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const hasVisibleDataRef = useRef(false);
-  const isFetchingRef = useRef(false);
+  const latestRequestIdRef = useRef(0);
 
   const [appliedSettings, setAppliedSettings] = useState(() => ({
     tickers: DEFAULT_FAST_TICKERS,
@@ -68,10 +68,7 @@ function App() {
   };
 
   const fetchData = useCallback(async () => {
-    if (isFetchingRef.current) {
-      return;
-    }
-    isFetchingRef.current = true;
+    const requestId = ++latestRequestIdRef.current;
 
     const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
       new Promise((resolve) => {
@@ -113,12 +110,14 @@ function App() {
 
       const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
       if (snapshot) {
+        if (requestId !== latestRequestIdRef.current) return;
         setPortfolioData(snapshot.portfolio);
         setBacktestData(snapshot.backtest);
         setSignalsData(snapshot.signals);
         window.localStorage.setItem('qa_last_snapshot', JSON.stringify(snapshot));
         setError(null);
       } else {
+        if (requestId !== latestRequestIdRef.current) return;
         if (hasVisibleDataRef.current) {
           // Keep dashboard stable; do not show noisy timeout banner over valid visible data.
           setError(null);
@@ -135,10 +134,12 @@ function App() {
         }
       }
     } catch (err) {
+      if (requestId !== latestRequestIdRef.current) return;
       setError(err instanceof Error ? err.message : 'Failed to fetch data');
     } finally {
-      isFetchingRef.current = false;
-      setLoading(false);
+      if (requestId === latestRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [appliedSettings.tickers, appliedSettings.start_date, appliedSettings.end_date]);
 
