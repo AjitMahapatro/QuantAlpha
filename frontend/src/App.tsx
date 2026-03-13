@@ -287,6 +287,22 @@ function App() {
     }));
   };
 
+  const hasUsablePortfolioData = Boolean(
+    portfolioData
+    && (
+      portfolioData.expected_return !== 0
+      || portfolioData.volatility !== 0
+      || portfolioData.sharpe_ratio !== 0
+      || Object.values(portfolioData.risk_contribution || {}).some((v) => v !== 0)
+    )
+  );
+
+  const hasUsableBacktestData = Boolean(
+    backtestData
+    && backtestData.dates.length > 0
+    && backtestData.portfolio_curve.length > 0
+  );
+
   if (blockingLoad) {
     return (
       <div className="min-h-screen bg-gradient-bg">
@@ -308,8 +324,14 @@ function App() {
           <div className="space-y-8 animate-fade-in-up">
             {signalsData && <BestPick signals={signalsData} />}
             {signalsData && <MarketPulsePanel signals={signalsData} />}
-            {portfolioData && <PortfolioOverview data={portfolioData} />}
-            {backtestData && <BacktestChart data={backtestData} />}
+            {hasUsablePortfolioData && portfolioData && <PortfolioOverview data={portfolioData} />}
+            {hasUsableBacktestData && backtestData && <BacktestChart data={backtestData} />}
+            {!hasUsablePortfolioData && !hasUsableBacktestData && signalsData && (
+              <div className="glass-effect rounded-lg p-6 border border-amber-300/20 text-amber-100">
+                Portfolio optimization and backtest data are unavailable for this range right now.
+                Research signals are still shown from the loaded universe.
+              </div>
+            )}
             {signalsData && <ResearchSignalsComponent data={signalsData} />}
             {!signalsData && !portfolioData && !backtestData && (
               <div className="glass-effect rounded-lg p-6 border border-white/10 text-white/80">
