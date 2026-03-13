@@ -69,6 +69,24 @@ function App() {
     }
   };
 
+  const getSnapshotTimeoutMs = (startDate?: string, endDate?: string, blocking = false) => {
+    const startMs = startDate ? Date.parse(startDate) : NaN;
+    const endMs = endDate ? Date.parse(endDate) : NaN;
+    const years =
+      Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
+        ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
+        : 1;
+
+    let timeoutMs = 30000;
+    if (years >= 15) timeoutMs = 120000;
+    else if (years >= 10) timeoutMs = 90000;
+    else if (years >= 5) timeoutMs = 60000;
+    else if (years >= 2) timeoutMs = 45000;
+
+    // Long ranges need more time, but still avoid indefinite full-screen blocking.
+    return blocking ? Math.min(timeoutMs, 45000) : timeoutMs;
+  };
+
   const fetchData = useCallback(async (options?: { blocking?: boolean }) => {
     const requestId = ++latestRequestIdRef.current;
     const isBlocking = options?.blocking ?? !hasVisibleDataRef.current;
@@ -100,25 +118,7 @@ function App() {
         end_date: appliedSettings.end_date || undefined,
       };
       const queryKey = JSON.stringify(params);
-      let timeoutMs = 10000;
-
-      const startMs = params.start_date ? Date.parse(params.start_date) : NaN;
-      const endMs = params.end_date ? Date.parse(params.end_date) : NaN;
-      const years =
-        Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
-          ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
-          : 1;
-
-      if (years >= 15) timeoutMs = 120000;
-      else if (years >= 10) timeoutMs = 90000;
-      else if (years >= 5) timeoutMs = 60000;
-      else if (years >= 2) timeoutMs = 45000;
-      else timeoutMs = 30000;
-
-      // Never keep the user on the full-screen loading view for too long.
-      if (isBlocking) {
-        timeoutMs = Math.min(timeoutMs, 20000);
-      }
+      const timeoutMs = getSnapshotTimeoutMs(params.start_date, params.end_date, isBlocking);
 
       const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
       const hasSignalData = (s: ISignals | null | undefined) => {
@@ -298,7 +298,7 @@ function App() {
             {signalsData && <ResearchSignalsComponent data={signalsData} />}
             {!signalsData && !portfolioData && !backtestData && (
               <div className="glass-effect rounded-lg p-6 border border-white/10 text-white/80">
-                No data loaded in 10s. Open Settings and reduce date range/tickers, then click Apply.
+                No data loaded yet. Try fewer tickers or a shorter date range, then click Apply.
               </div>
             )}
           </div>
