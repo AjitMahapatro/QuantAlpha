@@ -263,6 +263,21 @@ function App() {
       ? 'px-3 py-1.5 rounded-lg text-xs border border-cyan-300/50 bg-cyan-500/20 text-cyan-100 shadow-[0_0_0_1px_rgba(34,211,238,0.25)]'
       : 'px-3 py-1.5 rounded-lg text-xs border border-white/15 bg-white/5 hover:bg-white/10 text-white/80';
 
+  const draftTickerCount = normalizeTickers(draftSettings.tickers)
+    .split(',')
+    .filter(Boolean)
+    .length;
+  const draftYears = (() => {
+    const startMs = draftSettings.start_date ? Date.parse(draftSettings.start_date) : NaN;
+    const endMs = draftSettings.end_date ? Date.parse(draftSettings.end_date) : NaN;
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return 1;
+    return (endMs - startMs) / (1000 * 60 * 60 * 24 * 365);
+  })();
+  const isHeavyDraftQuery =
+    (draftTickerCount >= 7 && draftYears >= 5)
+    || (draftTickerCount >= 10 && draftYears >= 3)
+    || (draftTickerCount >= 5 && draftYears >= 10);
+
   const applySmartDefaults = () => {
     applyDatePresetYears(1);
     setDraftSettings((s) => ({
@@ -487,6 +502,13 @@ function App() {
                 </div>
               </div>
 
+              {isHeavyDraftQuery && (
+                <div className="mt-5 rounded-xl border border-amber-300/30 bg-amber-500/10 px-4 py-3 text-amber-100">
+                  This combination is too heavy for free market data. Keep one side smaller:
+                  fewer companies or a shorter date range.
+                </div>
+              )}
+
               <div className="flex items-center gap-3 mt-6">
                 <button
                   type="button"
@@ -504,7 +526,12 @@ function App() {
                 </button>
                 <button
                   type="button"
-                  className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/20 text-white border border-white/20"
+                  className={`px-4 py-2 rounded-lg text-white border ${
+                    isHeavyDraftQuery
+                      ? 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed'
+                      : 'bg-white/15 hover:bg-white/20 border-white/20'
+                  }`}
+                  disabled={isHeavyDraftQuery}
                   onClick={() => {
                     // Clear visible cards so stale values are never confused as newly applied settings.
                     setPortfolioData(null);
