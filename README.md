@@ -207,6 +207,17 @@ The project configuration includes a 10-stock default universe in `backend/confi
 
 The deployed frontend may use a smaller recommended preset by default for better reliability on free infrastructure.
 
-## Author
+## Team
 
-Ajit Mahapatro
+Team Leader:
+
+- Ajit Mahapatro
+
+Team Members:
+
+- G. Jyothi Charan
+- M. Naveen
+- A. Shanmukh
+- P. Leela Venkatesh
+- K. Kushwanth
+- K. Harsha
