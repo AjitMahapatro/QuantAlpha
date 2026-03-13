@@ -32,6 +32,7 @@ function App() {
   const [backtestData, setBacktestData] = useState<BacktestData | null>(null);
   const [signalsData, setSignalsData] = useState<ISignals | null>(null);
   const [loading, setLoading] = useState(true);
+  const [blockingLoad, setBlockingLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const hasVisibleDataRef = useRef(false);
   const latestRequestIdRef = useRef(0);
@@ -68,8 +69,9 @@ function App() {
     }
   };
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (options?: { blocking?: boolean }) => {
     const requestId = ++latestRequestIdRef.current;
+    const isBlocking = options?.blocking ?? !hasVisibleDataRef.current;
 
     const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
       new Promise((resolve) => {
@@ -87,6 +89,9 @@ function App() {
 
     try {
       setLoading(true);
+      if (isBlocking) {
+        setBlockingLoad(true);
+      }
       setError(null);
 
       const params = {
@@ -109,6 +114,11 @@ function App() {
       else if (years >= 5) timeoutMs = 60000;
       else if (years >= 2) timeoutMs = 45000;
       else timeoutMs = 30000;
+
+      // Never keep the user on the full-screen loading view for too long.
+      if (isBlocking) {
+        timeoutMs = Math.min(timeoutMs, 20000);
+      }
 
       const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
       const hasSignalData = (s: ISignals | null | undefined) => {
@@ -169,6 +179,7 @@ function App() {
     } finally {
       if (requestId === latestRequestIdRef.current) {
         setLoading(false);
+        setBlockingLoad(false);
       }
     }
   }, [appliedSettings.tickers, appliedSettings.start_date, appliedSettings.end_date]);
@@ -184,13 +195,13 @@ function App() {
       setBacktestData(cached.backtest);
       setSignalsData(cached.signals);
     }
-    fetchData();
+    fetchData({ blocking: true });
   }, [fetchData]);
 
   useEffect(() => {
     if (!appliedSettings.refreshSeconds || appliedSettings.refreshSeconds <= 0) return;
     const id = window.setInterval(() => {
-      fetchData();
+      fetchData({ blocking: false });
     }, appliedSettings.refreshSeconds * 1000);
     return () => window.clearInterval(id);
   }, [appliedSettings.refreshSeconds, fetchData]);
@@ -261,7 +272,7 @@ function App() {
     }));
   };
 
-  if (loading) {
+  if (blockingLoad) {
     return (
       <div className="min-h-screen bg-gradient-bg">
         <LoadingSpinner />
@@ -499,6 +510,7 @@ function App() {
                     setPortfolioData(null);
                     setBacktestData(null);
                     setSignalsData(null);
+                    setBlockingLoad(true);
                     setLoading(true);
                     setError(null);
                     setAppliedSettings({ ...draftSettings });

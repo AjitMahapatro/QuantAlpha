@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 
 import logging
 from datetime import date
+import time
 
 try:
     from backend.services.portfolio_service import (
@@ -37,6 +38,9 @@ if not logger.handlers:
 
 # Reduce noisy upstream logs (Yahoo blocks can spam errors)
 logging.getLogger("yfinance").setLevel(logging.WARNING)
+
+_SNAPSHOT_CACHE_TTL_SECONDS = 120
+_snapshot_cache: dict[tuple[tuple[str, ...] | None, str | None, str | None], tuple[float, dict]] = {}
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
@@ -159,11 +163,19 @@ def snapshot(
 ):
     try:
         parsed = [t.strip().upper() for t in tickers.split(",") if t.strip()] if tickers else None
-        return {
+        cache_key = (tuple(parsed) if parsed else None, start_date, end_date)
+        cached = _snapshot_cache.get(cache_key)
+        now = time.time()
+        if cached and (now - cached[0]) < _SNAPSHOT_CACHE_TTL_SECONDS:
+            return cached[1]
+
+        payload = {
             "portfolio": run_portfolio_optimization(parsed, start_date, end_date),
             "backtest": run_backtest(parsed, start_date, end_date),
             "signals": run_research(parsed, start_date, end_date),
         }
+        _snapshot_cache[cache_key] = (now, payload)
+        return payload
     except Exception as exc:
         logger.exception("Snapshot endpoint failed")
         raise HTTPException(
