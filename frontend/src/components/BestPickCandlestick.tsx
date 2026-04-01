@@ -40,8 +40,9 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
         setPrediction(null);
         setError('Failed to load candlestick data.');
       } finally {
-        if (cancelled) return;
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
@@ -52,50 +53,44 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
   }, [titleTicker, startDate, endDate, retryKey]);
 
   return (
-    <Card className="glass-effect relative overflow-hidden">
-      <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-fuchsia-500/20 blur-3xl" />
-      <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full bg-sky-500/20 blur-3xl" />
+    <Card className="glass-effect">
+      <div className="floating-orb orb-top-right orb-medium orb-fuchsia" />
+      <div className="floating-orb orb-bottom-left orb-medium orb-sky" />
 
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-white flex items-center justify-between">
+        <CardTitle className="title-lg panel-title-row">
           Best Pick Candlestick
-          <span className="text-white/80">{titleTicker}</span>
+          <span className="muted-text-strong">{titleTicker}</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {prediction && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-              <div className="text-xs text-white/60">As of</div>
-              <div className="text-sm font-semibold text-white">{prediction.as_of}</div>
+          <div className="prediction-grid">
+            <div className="mini-card">
+              <div className="tiny-text">As of</div>
+              <div className="title-md">{prediction.as_of}</div>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-              <div className="text-xs text-white/60">Pred 1D</div>
-              <div className="text-sm font-semibold text-white">{prediction.pred_1d_pct > 0 ? '+' : ''}{prediction.pred_1d_pct}%</div>
+            <div className="mini-card">
+              <div className="tiny-text">Pred 1D</div>
+              <div className="title-md">{prediction.pred_1d_pct > 0 ? '+' : ''}{prediction.pred_1d_pct}%</div>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-              <div className="text-xs text-white/60">Pred 5D</div>
-              <div className="text-sm font-semibold text-white">{prediction.pred_5d_pct > 0 ? '+' : ''}{prediction.pred_5d_pct}%</div>
+            <div className="mini-card">
+              <div className="tiny-text">Pred 5D</div>
+              <div className="title-md">{prediction.pred_5d_pct > 0 ? '+' : ''}{prediction.pred_5d_pct}%</div>
             </div>
-            <div className="bg-white/5 border border-white/10 rounded-lg p-3">
-              <div className="text-xs text-white/60">Pred 20D</div>
-              <div className="text-sm font-semibold text-white">{prediction.pred_20d_pct > 0 ? '+' : ''}{prediction.pred_20d_pct}%</div>
+            <div className="mini-card">
+              <div className="tiny-text">Pred 20D</div>
+              <div className="title-md">{prediction.pred_20d_pct > 0 ? '+' : ''}{prediction.pred_20d_pct}%</div>
             </div>
           </div>
         )}
 
-        {loading && (
-          <div className="text-white/70">Loading candlestick…</div>
-        )}
+        {loading && <div className="muted-text-strong">Loading candlestick...</div>}
 
         {!loading && error && (
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-red-300">{error}</div>
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white border border-white/10"
-              onClick={() => setRetryKey((k) => k + 1)}
-            >
+          <div className="row-between" style={{ gap: '1rem' }}>
+            <div className="text-danger-soft">{error}</div>
+            <button type="button" className="button" onClick={() => setRetryKey((k) => k + 1)}>
               Retry
             </button>
           </div>
@@ -103,7 +98,7 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
 
         {!loading && !error && ohlc && ohlc.dates.length > 0 ? (
           <>
-            <div className="relative h-[26rem] bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="chart-shell chart-shell-tall">
               <Plot
                 data={[
                   {
@@ -133,7 +128,7 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
               />
             </div>
 
-            <div className="relative h-56 mt-4 bg-white/5 rounded-lg p-3 border border-white/10">
+            <div className="chart-shell" style={{ height: '14rem', marginTop: '1rem' }}>
               <Plot
                 data={[
                   {
@@ -162,23 +157,15 @@ export const BestPickCandlestick: React.FC<BestPickCandlestickProps> = ({ ticker
         ) : null}
 
         {!loading && !error && (!ohlc || ohlc.dates.length === 0) && (
-          <div className="flex items-center justify-between gap-4">
-            <div className="text-white/70">No candlestick data available for {titleTicker}.</div>
-            <button
-              type="button"
-              className="px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white border border-white/10"
-              onClick={() => setRetryKey((k) => k + 1)}
-            >
+          <div className="row-between" style={{ gap: '1rem' }}>
+            <div className="muted-text-strong">No candlestick data available for {titleTicker}.</div>
+            <button type="button" className="button" onClick={() => setRetryKey((k) => k + 1)}>
               Retry
             </button>
           </div>
         )}
 
-        {!prediction && (
-          <div className="text-xs text-white/50 mt-4">
-            
-          </div>
-        )}
+        {!prediction && <div className="tiny-text" style={{ marginTop: '1rem' }}></div>}
       </CardContent>
     </Card>
   );

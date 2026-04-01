@@ -12,7 +12,7 @@ export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
     if (data.portfolio_curve.length === 0) {
       return { portfolio: '0.00', benchmark: null as string | null, outperformance: null as string | null };
     }
-    
+
     const portfolio = ((data.portfolio_curve[data.portfolio_curve.length - 1] - 1) * 100).toFixed(2);
 
     if (data.benchmark_curve.length === 0) {
@@ -21,24 +21,26 @@ export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
 
     const benchmark = ((data.benchmark_curve[data.benchmark_curve.length - 1] - 1) * 100).toFixed(2);
     const outperformance = (parseFloat(portfolio) - parseFloat(benchmark)).toFixed(2);
-    
+
     return { portfolio, benchmark, outperformance };
   };
 
   const performance = calculatePerformance();
+  const alphaClass = parseFloat(performance.outperformance || '0') >= 0 ? 'text-success' : 'text-danger';
 
   return (
-    <Card className="glass-effect relative overflow-hidden">
+    <Card className="glass-effect">
       <CardHeader>
-        <CardTitle className="text-xl font-semibold text-white flex items-center justify-between">
+        <CardTitle className="title-xl panel-title-row">
           Portfolio Backtest Performance
-          <div className="flex space-x-4 text-sm">
-            <span className="text-green-400">Portfolio: +{performance.portfolio}%</span>
+          <div className="metrics-inline">
+            <span className="text-success">Portfolio: +{performance.portfolio}%</span>
             {performance.benchmark !== null && (
               <>
-                <span className="text-blue-400">Benchmark: +{performance.benchmark}%</span>
-                <span className={`font-bold ${parseFloat(performance.outperformance || '0') >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  Alpha: {parseFloat(performance.outperformance || '0') >= 0 ? '+' : ''}{performance.outperformance}%
+                <span className="text-info">Benchmark: +{performance.benchmark}%</span>
+                <span className={alphaClass}>
+                  Alpha: {parseFloat(performance.outperformance || '0') >= 0 ? '+' : ''}
+                  {performance.outperformance}%
                 </span>
               </>
             )}
@@ -46,12 +48,12 @@ export const BacktestChart: React.FC<BacktestChartProps> = ({ data }) => {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="absolute inset-0 pointer-events-none opacity-40">
-          <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full bg-purple-500/30 blur-3xl"></div>
-          <div className="absolute -bottom-24 -left-24 w-72 h-72 rounded-full bg-cyan-500/30 blur-3xl"></div>
+        <div className="chart-overlay">
+          <div className="floating-orb orb-top-right orb-large orb-purple"></div>
+          <div className="floating-orb orb-bottom-left orb-large orb-cyan"></div>
         </div>
 
-        <div className="relative h-96 bg-white/5 rounded-lg p-4 border border-white/10">
+        <div className="chart-shell">
           <Plot
             data={([
               {

@@ -41,57 +41,65 @@ export const MarketPulsePanel: React.FC<MarketPulsePanelProps> = ({ signals }) =
   const avgConfidence = rows.reduce((sum, r) => sum + r.c, 0) / rows.length;
 
   return (
-    <Card className="glass-effect relative overflow-hidden hover-glow">
-      <div className="absolute -top-20 -right-20 w-64 h-64 rounded-full bg-sky-500/20 blur-3xl" />
-      <div className="absolute -bottom-20 -left-20 w-64 h-64 rounded-full bg-emerald-500/20 blur-3xl" />
+    <Card className="glass-effect hover-glow">
+      <div className="floating-orb orb-top-right orb-medium orb-sky" />
+      <div className="floating-orb orb-bottom-left orb-medium orb-emerald" />
 
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-white flex items-center justify-between">
+        <CardTitle className="title-lg panel-title-row">
           Market Pulse
-          <span className="text-xs text-white/50 font-medium">computed from loaded signals</span>
+          <span className="tiny-text">computed from loaded signals</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="text-xs text-white/60">Bullish Breadth (1D)</div>
-            <div className="text-xl font-semibold text-white mt-1">{bullish1D.toFixed(1)}%</div>
+        <div className="three-col-grid" style={{ marginBottom: '1.5rem' }}>
+          <div className="mini-card">
+            <div className="tiny-text">Bullish Breadth (1D)</div>
+            <div className="title-lg" style={{ marginTop: '0.25rem' }}>{bullish1D.toFixed(1)}%</div>
           </div>
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="text-xs text-white/60">Bullish Breadth (20D)</div>
-            <div className="text-xl font-semibold text-white mt-1">{bullish20D.toFixed(1)}%</div>
+          <div className="mini-card">
+            <div className="tiny-text">Bullish Breadth (20D)</div>
+            <div className="title-lg" style={{ marginTop: '0.25rem' }}>{bullish20D.toFixed(1)}%</div>
           </div>
-          <div className="bg-white/5 border border-white/10 rounded-xl p-3">
-            <div className="text-xs text-white/60">Avg Confidence</div>
-            <div className="text-xl font-semibold text-white mt-1">{avgConfidence.toFixed(1)}%</div>
+          <div className="mini-card">
+            <div className="tiny-text">Avg Confidence</div>
+            <div className="title-lg" style={{ marginTop: '0.25rem' }}>{avgConfidence.toFixed(1)}%</div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <div className="text-sm font-semibold text-emerald-300 mb-3">Top Opportunities</div>
-            <div className="space-y-2">
+        <div className="field-grid">
+          <div className="subpanel">
+            <div className="small-text text-success-soft" style={{ marginBottom: '0.75rem', fontWeight: 700 }}>
+              Top Opportunities
+            </div>
+            <div className="stack-sm">
               {leaders.map((r) => (
-                <div key={`top-${r.ticker}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 border border-white/5">
-                  <div className="text-white font-medium">{r.ticker}</div>
-                  <div className="text-right">
-                    <div className="text-white text-sm">{formatSigned(r.s20)}</div>
-                    <div className="text-white/60 text-xs">score {r.score.toFixed(2)}</div>
+                <div key={`top-${r.ticker}`} className="surface-muted" style={{ padding: '0.65rem 0.85rem' }}>
+                  <div className="row-between">
+                    <div style={{ fontWeight: 600 }}>{r.ticker}</div>
+                    <div className="text-right">
+                      <div className="small-text">{formatSigned(r.s20)}</div>
+                      <div className="tiny-text">score {r.score.toFixed(2)}</div>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-            <div className="text-sm font-semibold text-red-300 mb-3">Weakest Momentum</div>
-            <div className="space-y-2">
+          <div className="subpanel">
+            <div className="small-text text-danger-soft" style={{ marginBottom: '0.75rem', fontWeight: 700 }}>
+              Weakest Momentum
+            </div>
+            <div className="stack-sm">
               {laggards.map((r) => (
-                <div key={`low-${r.ticker}`} className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 border border-white/5">
-                  <div className="text-white font-medium">{r.ticker}</div>
-                  <div className="text-right">
-                    <div className="text-white text-sm">{formatSigned(r.s20)}</div>
-                    <div className="text-white/60 text-xs">score {r.score.toFixed(2)}</div>
+                <div key={`low-${r.ticker}`} className="surface-muted" style={{ padding: '0.65rem 0.85rem' }}>
+                  <div className="row-between">
+                    <div style={{ fontWeight: 600 }}>{r.ticker}</div>
+                    <div className="text-right">
+                      <div className="small-text">{formatSigned(r.s20)}</div>
+                      <div className="tiny-text">score {r.score.toFixed(2)}</div>
+                    </div>
                   </div>
                 </div>
               ))}
