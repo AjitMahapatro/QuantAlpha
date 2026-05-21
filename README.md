@@ -1,223 +1,265 @@
-# QuantAlpha
+# 📈 QuantAlpha – Financial Analytics & Market Intelligence Platform
 
-QuantAlpha is an AI-powered stock market analytics dashboard built with a React frontend and a FastAPI backend. It uses `yfinance` as the primary market data source, computes portfolio and backtest analytics, and surfaces research signals with a simple decision-support UI.
+QuantAlpha is a machine learning-based financial analytics platform designed to analyze stock market trends, portfolio performance, and investment insights through an interactive dashboard experience.
 
-This project was built as a college submission and is designed to demonstrate:
+The project combines financial data analysis, portfolio analytics, backtesting, and predictive modeling into a unified analytics platform using a React frontend and FastAPI backend.
 
-- stock data collection with `yfinance`
-- portfolio optimization and backtesting
-- multi-horizon research signals
-- a modern analytics dashboard for interactive exploration
+Developed as a collaborative team project during the Machine Learning with Python Internship at Adhoc Network Tech Company.
 
-## Features
+---
 
-- Portfolio overview with:
-  - expected return
-  - volatility
-  - Sharpe ratio
-- Portfolio backtest chart against benchmark
-- Research signals for multiple tickers
-- Best pick selection from the selected universe
-- Market pulse summary
-- Settings page for:
-  - ticker universe
-  - date range
-  - refresh interval
-- Heavy-query guardrails for free market data usage
-- Deployment-ready frontend/backend split
+# 👥 Team
 
-## Tech Stack
-
-- Frontend:
-  - React
-  - TypeScript
-  - Vite
-  - Tailwind CSS
-  - Plotly
-  - Axios
-- Backend:
-  - FastAPI
-  - Uvicorn
-  - Pandas
-  - NumPy
-  - scikit-learn
-  - XGBoost
-  - joblib
-  - yfinance
-
-## Project Structure
-
-```text
-QuantAlpha/
-  backend/
-    app.py
-    config.py
-    train_model.py
-    requirements.txt
-    services/
-    schemas/
-    models/
-  frontend/
-    src/
-    public/
-    package.json
-  runtime.txt
-```
-
-## Data Source
-
-This project uses `yfinance` as the primary market data source. In deployed environments, long date ranges with many tickers can be less reliable than local runs because free data sources are slower and more rate-limited.
-
-For that reason, the UI includes practical limits and warnings for heavy combinations such as:
-
-- too many companies with too many years
-- large date ranges on free-hosted deployments
-
-## Machine Learning
-
-The backend includes a training pipeline in `backend/train_model.py` that trains XGBoost regressors for:
-
-- 1-day horizon
-- 5-day horizon
-- 20-day horizon
-
-Feature columns used:
-
-- `return_5`
-- `return_20`
-- `return_60`
-- `volatility_20`
-- `volatility_60`
-
-Trained models are saved in `backend/models/`.
-
-## Local Setup
-
-### Backend
-
-Use Python `3.11`.
-
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app:app --reload
-```
-
-Backend runs by default on:
-
-```text
-http://localhost:8000
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend runs by default on:
-
-```text
-http://localhost:5173
-```
-
-## Environment Configuration
-
-The frontend reads the backend URL from:
-
-```text
-VITE_API_BASE_URL
-```
-
-If not provided, it falls back to:
-
-```text
-http://localhost:8000
-```
-
-## API Endpoints
-
-Main backend routes from `backend/app.py`:
-
-- `GET /`
-- `GET /health`
-- `GET /portfolio`
-- `GET /backtest`
-- `GET /research`
-- `GET /snapshot`
-- `GET /predict`
-- `GET /ohlc`
-
-## Deployment
-
-### Frontend
-
-Recommended deployment: Vercel
-
-- Root directory: `frontend`
-- Build command: `npm run build`
-- Output directory: `dist`
-- Environment variable:
-
-```text
-VITE_API_BASE_URL=https://<your-backend-url>
-```
-
-### Backend
-
-Recommended deployment: Render
-
-- Build command:
-
-```bash
-pip install -r backend/requirements.txt
-```
-
-- Start command:
-
-```bash
-uvicorn backend.app:app --host 0.0.0.0 --port $PORT
-```
-
-## Known Limitations
-
-- `yfinance` is convenient but not always stable in cloud deployment
-- free-hosted backends may be slower than local runs
-- large date ranges with many tickers can fail or take too long
-- this project is intended for educational and analytical use, not financial advice
-
-## Default Universe
-
-The project configuration includes a 10-stock default universe in `backend/config.py`:
-
-- AAPL
-- MSFT
-- NVDA
-- JPM
-- GS
-- JNJ
-- PFE
-- PG
-- KO
-- XOM
-
-The deployed frontend may use a smaller recommended preset by default for better reliability on free infrastructure.
-
-## Team
-
-Team Leader:
-
+## Team Leader
 - Ajit Mahapatro
 
-Team Members:
-
+## Team Members
 - G. Jyothi Charan
 - M. Naveen
 - A. Shanmukh
 - P. Leela Venkatesh
 - K. Kushwanth
 - K. Harsha
+
+---
+
+# 📌 Project Overview
+
+QuantAlpha was developed to provide an interactive environment for:
+- stock market analytics
+- portfolio monitoring
+- backtesting
+- market trend analysis
+- research signal visualization
+
+The platform integrates financial data processing with analytics dashboards to help users explore stock performance and portfolio behavior.
+
+---
+
+# 🚀 Key Features
+
+## Portfolio Analytics
+- Portfolio performance tracking
+- Expected return analysis
+- Volatility monitoring
+- Sharpe ratio visualization
+- Portfolio allocation insights
+
+---
+
+## Backtesting System
+- Portfolio vs benchmark comparison
+- Historical performance analysis
+- Trend visualization
+- Multi-period analytics
+
+---
+
+## Research Signal Dashboard
+- Multi-horizon research signals
+- Market trend monitoring
+- Best-pick stock insights
+- Stock snapshot analytics
+
+---
+
+## Interactive Dashboard
+- Dynamic chart visualizations
+- Market pulse overview
+- User-controlled ticker selection
+- Configurable date ranges
+
+---
+
+## Data Reliability Handling
+The platform includes safeguards for handling free-market data limitations such as:
+- API rate limits
+- unstable responses
+- large query restrictions
+- deployment-related delays
+
+---
+
+# 🤖 Machine Learning
+
+The backend includes predictive modeling workflows using:
+- Scikit-Learn
+- XGBoost
+
+The project uses machine learning models for multi-horizon market analysis including:
+- short-term trend analysis
+- medium-term forecasting
+- research signal generation
+
+---
+
+# 🛠️ Tech Stack
+
+## Frontend
+- React.js
+- TypeScript
+- Vite
+- Tailwind CSS
+- Plotly
+
+## Backend
+- FastAPI
+- Python
+- Pandas
+- NumPy
+- Scikit-Learn
+- XGBoost
+- Joblib
+
+## Data Source
+- yfinance API
+
+---
+
+# 📂 Project Structure
+
+```text
+QuantAlpha/
+│
+├── backend/
+│   ├── app.py
+│   ├── train_model.py
+│   ├── services/
+│   ├── schemas/
+│   └── models/
+│
+├── frontend/
+│   ├── src/
+│   └── public/
+│
+└── README.md
+```
+
+---
+
+# 📊 Dashboard Modules
+
+- Portfolio Overview
+- Market Pulse Dashboard
+- Backtesting Analytics
+- Research Signal Panel
+- Risk & Return Analysis
+- Stock Snapshot Viewer
+
+---
+
+# ⚙️ Workflow
+
+```text
+Market Data Collection
+        ↓
+Data Preprocessing
+        ↓
+Feature Engineering
+        ↓
+Machine Learning Analysis
+        ↓
+Portfolio Analytics
+        ↓
+Dashboard Visualization
+```
+
+---
+
+# 💻 Local Setup
+
+## Clone Repository
+
+```bash
+git clone <repo-url>
+cd QuantAlpha
+```
+
+---
+
+## Backend Setup
+
+```bash
+cd backend
+
+python -m venv .venv
+
+pip install -r requirements.txt
+
+uvicorn app:app --reload
+```
+
+Backend runs on:
+
+```text
+http://localhost:8000
+```
+
+---
+
+## Frontend Setup
+
+```bash
+cd frontend
+
+npm install
+
+npm run dev
+```
+
+Frontend runs on:
+
+```text
+http://localhost:5173
+```
+
+---
+
+# 🌐 Deployment
+
+## Frontend
+- Vercel
+
+## Backend
+- Render
+
+---
+
+# ⚠️ Known Limitations
+
+- Free-market APIs may occasionally experience instability
+- Large date ranges may increase response time
+- Cloud-hosted free deployments may be slower than local execution
+
+This project is intended for educational and analytics purposes only.
+
+---
+
+# 📈 Future Improvements
+
+- Advanced portfolio optimization
+- Real-time streaming market data
+- Interactive analytics dashboards
+- Enhanced predictive modeling
+- Better deployment scalability
+
+---
+
+
+# 🎯 Learning Outcomes
+
+This project helped strengthen practical skills in:
+- financial analytics
+- machine learning workflows
+- data preprocessing
+- portfolio analysis
+- dashboard visualization
+- frontend-backend integration
+- collaborative product development
+
+---
+
+# 👤 Author
+
+Ajit Mahapatro  
+B.Sc. Data Science – Aditya Degree College
