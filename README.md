@@ -1,176 +1,150 @@
 # QuantAlpha
 
-QuantAlpha is a quantitative financial analytics and risk analysis platform built to demonstrate a realistic end-to-end data science workflow on public market data.
+QuantAlpha is a quantitative financial analytics and risk analysis platform built to demonstrate a realistic end-to-end data science workflow on public market data. The project combines historical equity prices from `yfinance`, macroeconomic indicators from FRED, feature engineering for time-series modeling, a transparent XGBoost classification pipeline, and a simple rules-based backtesting engine.
 
-The project combines:
-- historical equity prices from `yfinance`
-- macroeconomic indicators from FRED
-- feature engineering for financial time series
-- XGBoost-based forecasting experiments
-- portfolio and risk analytics
-- interpretable machine learning
-- strategy backtesting
-- interactive frontend visualization
+The goal is not to look like a startup dashboard. The goal is to show how a student can structure a practical financial analytics project that is readable, modular, and strong enough to discuss in interviews.
 
-The goal of the project is not to simulate a trading platform or startup dashboard. Instead, it focuses on demonstrating practical data science workflows, financial analytics concepts, and time-series modeling techniques in an interview-friendly and educational manner.
+## Business Problem
 
----
+Investors and analysts often need more than raw prices. They need a workflow that answers questions such as:
 
-# Business Problem
+- How has a selected equity universe behaved over time?
+- What does portfolio risk look like under different market conditions?
+- Which technical and macro features are most informative for next-day trend prediction?
+- Does a simple rules-based strategy outperform a passive benchmark after realistic signal lagging?
 
-Financial markets are noisy and difficult to predict consistently. Investors and analysts require workflows that go beyond simple price visualization.
+QuantAlpha turns those questions into a reproducible analysis pipeline instead of a purely visual stock dashboard.
 
-QuantAlpha explores questions such as:
+## Analytical Scope
 
-- How do selected equities behave under changing market conditions?
-- What portfolio risk characteristics emerge across different assets?
-- Can technical and macroeconomic indicators provide useful directional signals?
-- How can leakage-aware machine learning workflows be applied to financial time series?
-- How do simple rule-based strategies compare against benchmark performance?
+- Exploratory financial data analysis
+- Portfolio analytics and risk diagnostics
+- Technical indicator feature engineering
+- Time-series-aware machine learning
+- Strategy backtesting
+- Macroeconomic context from FRED
+- Investment decision support through interpretable metrics
 
-The platform converts these ideas into a reproducible analytical workflow instead of a purely visual stock dashboard.
+## Datasets
 
----
+### Market Data
 
-# Core Features
+- Source: `yfinance`
+- Frequency: daily adjusted close prices
+- Example universe: `AAPL`, `MSFT`, `NVDA`, `JPM`, `XOM`
+- Benchmark: `^GSPC`
 
-## Exploratory Financial Data Analysis
-- historical market analysis
-- cumulative returns
-- rolling volatility
-- return distributions
-- correlation analysis
+### Macroeconomic Data
 
-## Portfolio & Risk Analytics
-- Sharpe Ratio
-- Sortino Ratio
-- Beta
-- Alpha
-- Maximum Drawdown
-- Annualized Volatility
-- Value at Risk (VaR)
-- Conditional Value at Risk (CVaR)
+- Source: FRED CSV endpoints
+- Series included:
+  - inflation proxy: `CPIAUCSL`
+  - interest rates: `FEDFUNDS`
+  - unemployment: `UNRATE`
+  - 10Y treasury yield: `DGS10`
+  - volatility index: `VIXCLS`
 
-## Machine Learning Forecasting
-- XGBoost forecasting experiments
-- chronological train/test split
-- leakage-aware feature engineering
-- feature importance analysis
-- directional forecasting workflow
+## Analytical Workflow
+
+1. Fetch historical equity prices and benchmark data from `yfinance`.
+2. Fetch macroeconomic indicators from FRED.
+3. Cache downloaded data to reduce repeated API calls and improve reliability.
+4. Forward-fill and align macro series to the trading calendar.
+5. Engineer technical and return-based features for each ticker.
+6. Build equal-weight portfolio baselines and risk metrics.
+7. Train an XGBoost classifier using a chronological train/test split.
+8. Run a simple signal-based backtest with one-day lagged execution.
+9. Surface results in a minimal frontend designed for analysis rather than marketing.
 
 ## Feature Engineering
-Technical indicators include:
-- RSI
-- MACD
-- Bollinger Bands
-- moving averages
-- momentum indicators
-- rolling standard deviation
-- volatility metrics
-- benchmark returns
 
-## Macroeconomic Integration
-FRED indicators:
+The backend generates a transparent feature set that is easy to explain in interviews:
+
+- daily returns
+- rolling means
+- rolling standard deviation
+- momentum over multiple windows
+- annualized rolling volatility
+- RSI
+- MACD and MACD signal
+- Bollinger Band position
+- moving averages
+- volume change
+- benchmark return
 - inflation
-- federal funds rate
-- unemployment rate
-- treasury yields
+- interest rate
+- unemployment
+- treasury yield
 - VIX
 
-## Backtesting Engine
-- signal generation
-- lagged execution logic
-- benchmark comparison
-- strategy performance tracking
+## Financial Analytics
 
----
+The platform computes:
 
-# Datasets & APIs
+- cumulative return
+- CAGR
+- Sharpe ratio
+- Sortino ratio
+- beta
+- alpha
+- max drawdown
+- annualized volatility
+- rolling volatility
+- Value at Risk (95%)
+- Conditional Value at Risk (95%)
+- correlation matrix
 
-## Market Data
-Source:
-- `yfinance`
+## Machine Learning Workflow
 
-Example equities:
-- AAPL
-- MSFT
-- NVDA
-- JPM
-- XOM
+The machine learning module predicts next-day direction for the primary ticker in the selected universe.
 
-Benchmark:
-- S&P 500 (`^GSPC`)
+Design choices:
 
-## Macroeconomic Data
-Source:
-- FRED API
+- model: `XGBClassifier`
+- target: next-day up/down move
+- split: chronological 80/20 train/test split
+- leakage control: features are built from information available at or before time `t`
+- evaluation metrics:
+  - accuracy
+  - precision
+  - recall
+  - F1 score
+  - confusion matrix
+- interpretability:
+  - feature importance
+  - local contribution scores using XGBoost `pred_contribs`
 
-Indicators:
-- CPIAUCSL
-- FEDFUNDS
-- UNRATE
-- DGS10
-- VIXCLS
+## Backtesting Logic
 
----
+The backtest is intentionally simple and interview-friendly.
 
-# Machine Learning Workflow
+- A long signal is generated when:
+  - price is above the short moving average
+  - MACD is above the MACD signal line
+  - RSI is above 50
+- Signals are lagged by one trading day to avoid look-ahead bias.
+- Positions are equal-weighted across active signals.
+- Performance is compared against the benchmark curve.
 
-The forecasting workflow is intentionally designed to remain:
-- interpretable
-- leakage-aware
-- educational
-- realistic
+## Frontend Pages
 
-## Model
-- XGBoost Classifier (`XGBClassifier`)
+- Market Overview
+- Portfolio Analytics
+- Risk Analysis
+- ML Forecasting
+- Backtesting Results
+- Economic Indicators Dashboard
 
-## Objective
-Explore whether technical and macroeconomic features provide useful short-term directional signals.
+The frontend is intentionally restrained: a research console with tables and meaningful charts instead of a landing-page-style dashboard.
 
-## Workflow
-- chronological train/test split
-- feature engineering using historical information only
-- leakage prevention
-- classification metrics evaluation
-
-## Evaluation Metrics
-- Accuracy
-- Precision
-- Recall
-- F1 Score
-- Confusion Matrix
-
-## Interpretability
-- feature importance
-- contribution analysis
-
----
-
-# Backtesting Logic
-
-The backtesting module evaluates simple rule-based trading signals.
-
-Signals are generated using:
-- moving averages
-- MACD crossover
-- RSI thresholds
-
-To avoid look-ahead bias:
-- signals are lagged by one trading day before execution
-
-Strategy performance is compared against benchmark cumulative returns.
-
----
-
-# Project Structure
+## Architecture
 
 ```text
 QuantAlpha
 ├── backend
 │   ├── app.py
 │   ├── config.py
-│   ├── requirements.txt
+│   ├── requirements-analytics.txt
 │   ├── services
 │   │   ├── cache.py
 │   │   ├── data_service.py
@@ -180,16 +154,123 @@ QuantAlpha
 │   │   ├── backtest_service.py
 │   │   └── platform_service.py
 │   └── models
-│
 ├── frontend
 │   └── src
-│
 ├── notebooks
-│   ├── eda_market_structure.ipynb
-│   ├── feature_engineering_workbench.ipynb
-│   ├── ml_experiments.ipynb
-│   └── backtesting_analysis.ipynb
-│
 ├── research
 ├── analysis
-└── README.md
+└── models
+```
+
+### Data Flow Diagram
+
+```text
+yfinance + FRED
+       ↓
+  Data fetching + caching
+       ↓
+Preprocessing and alignment
+       ↓
+Feature engineering
+       ↓
+├── Portfolio/risk analytics
+├── XGBoost forecasting
+└── Rules-based backtesting
+       ↓
+FastAPI snapshot endpoint
+       ↓
+React research interface
+```
+
+## Local Setup
+
+### Backend
+
+Use Python `3.11+`.
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-analytics.txt
+uvicorn app:app --reload
+```
+
+Backend default URL:
+
+```text
+http://localhost:8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend default URL:
+
+```text
+http://localhost:5173
+```
+
+## Main API Endpoint
+
+- `GET /snapshot`
+
+Query parameters:
+
+- `tickers`
+- `start_date`
+- `end_date`
+
+The endpoint returns the full analytics snapshot used by the frontend pages.
+
+## Notebooks and Research Structure
+
+- `notebooks/eda_market_structure.ipynb`
+- `notebooks/feature_engineering_workbench.ipynb`
+- `notebooks/ml_experiments.ipynb`
+- `notebooks/backtesting_analysis.ipynb`
+- `research/README.md`
+- `analysis/README.md`
+
+## Screenshots
+
+Add screenshots from the frontend to `analysis/screenshots/` and reference them here for portfolio submissions. Recommended captures:
+
+- Market Overview page
+- Risk Analysis page
+- ML Forecasting page
+- Backtesting Results page
+
+## Limitations
+
+- `yfinance` and public FRED endpoints are free and convenient, but they are not institutional-grade data feeds.
+- The current strategy is designed for interpretability, not production trading.
+- Transaction costs, slippage, and sector constraints are not yet modeled.
+- The ML pipeline uses one primary ticker at a time for direction prediction, which is helpful pedagogically but can be extended.
+
+## Future Improvements
+
+- Add walk-forward validation and probability calibration
+- Add transaction costs and turnover penalties to the backtest
+- Add portfolio optimization alternatives beyond equal weights
+- Add richer macro regime labeling
+- Add experiment tracking for repeated model runs
+- Add volatility regime classification as a second ML task
+
+## Why This Project Works For Interviews
+
+This repository demonstrates:
+
+- EDA on financial time series
+- domain-specific feature engineering
+- risk and portfolio analytics
+- time-series-aware model evaluation
+- interpretable machine learning
+- API integration with unstable public data sources
+- a practical backtesting loop
+- clean communication between backend analytics and frontend visualization
