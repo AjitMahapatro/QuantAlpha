@@ -1,169 +1,252 @@
-# backend/services/data_service.py
+from __future__ import annotations
 
-import yfinance as yf
+from datetime import datetime
+import os
+import time
+
 import pandas as pd
 import requests
-from io import StringIO
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import yfinance as yf
+from dotenv import load_dotenv
 from pathlib import Path
-try:
-    from backend.config import TICKERS, BENCHMARK, START_DATE, END_DATE
-except ModuleNotFoundError:
-    from config import TICKERS, BENCHMARK, START_DATE, END_DATE
 
-try:
-    _TZ_CACHE_DIR = Path(__file__).resolve().parent.parent / ".yfinance_tz_cache"
-    _TZ_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    yf.set_tz_cache_location(str(_TZ_CACHE_DIR))
-except Exception:
-    pass
+from backend.config import BENCHMARK
+from backend.services.cache import load_cached, store_cached
 
-_YF_TIMEOUT_SECONDS = 4
+env_path = Path(__file__).resolve().parent.parent / ".env"
 
+load_dotenv(dotenv_path=env_path)
+FRED_API_KEY = os.getenv("FRED_API_KEY")
+print("FRED KEY:", FRED_API_KEY)
 
-def _download_yf_with_timeout(*args, **kwargs):
-    ex = ThreadPoolExecutor(max_workers=1)
-    fut = ex.submit(yf.download, *args, **kwargs)
-    try:
-        return fut.result(timeout=_YF_TIMEOUT_SECONDS)
-    except Exception:
-        return pd.DataFrame()
-    finally:
-        ex.shutdown(wait=False, cancel_futures=True)
+FRED_SERIES = {
+    "inflation": "CPIAUCSL",
+    "interest_rate": "FEDFUNDS",
+    "unemployment": "UNRATE",
+    "treasury_yield_10y": "DGS10",
+    "vix": "VIXCLS",
+}
 
 
-def fetch_market_data():
+def _retry_get(url: str, timeout: int = 10, attempts: int = 3) -> requests.Response:
+    last_error: Exception | None = None
 
-    def _stooq_symbol(sym: str) -> str:
-        sym = sym.strip().lower()
-        if sym == "^gspc":
-            return "spx"
-        if sym.startswith("^"):
-            sym = sym[1:]
-        if "." not in sym:
-            sym = f"{sym}.us"
-        return sym
-
-    def _fetch_stooq(symbol: str) -> pd.DataFrame:
-        url = f"https://stooq.com/q/d/l/?s={_stooq_symbol(symbol)}&i=d"
+    for attempt in range(attempts):
         try:
-            resp = requests.get(url, timeout=4)
-            resp.raise_for_status()
-            df = pd.read_csv(StringIO(resp.text))
-        except Exception:
-            return pd.DataFrame()
-        return df
+            response = requests.get(url, timeout=timeout)
+            response.raise_for_status()
+            return response
 
-    def _stooq_close_series(symbol: str) -> pd.Series:
-        df = _fetch_stooq(symbol)
-        if df.empty or "Date" not in df.columns or "Close" not in df.columns:
-            return pd.Series(dtype=float)
+        except Exception as exc:
+            last_error = exc
+            time.sleep(1.5 * (attempt + 1))
 
-        df = df[["Date", "Close"]].copy()
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-        df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
-        df = df.dropna(subset=["Date", "Close"]).sort_values("Date")
+    raise RuntimeError(f"Request failed for {url}") from last_error
 
-        try:
-            s = pd.to_datetime(START_DATE)
-            e = pd.to_datetime(END_DATE)
-            df = df.loc[(df["Date"] >= s) & (df["Date"] <= e)]
-        except Exception:
-            pass
 
-        if df.empty:
-            return pd.Series(dtype=float)
-        return df.set_index("Date")["Close"].sort_index()
+def fetch_price_data(tickers: list[str], start: str, end: str) -> pd.DataFrame:
+    cache_key = f"{','.join(tickers)}|{start}|{end}"
 
-    # Prefer Stooq first to avoid yfinance hangs/blocks.
-    rows = []
-    with ThreadPoolExecutor(max_workers=min(8, max(1, len(TICKERS)))) as ex:
-        futures = {ex.submit(_stooq_close_series, t): t for t in TICKERS}
-        for fut in as_completed(futures):
-            t = futures[fut]
+    cached = load_cached("prices", cache_key, ttl_seconds=6 * 60 * 60)
+
+    if cached is not None:
+        return cached
+
+    all_data = {}
+
+    for ticker in tickers:
+        success = False
+
+        for attempt in range(3):
             try:
-                s = fut.result()
-            except Exception:
-                s = pd.Series(dtype=float)
-            if s.empty:
+                print(f"Fetching {ticker}...")
+
+                data = yf.download(
+                    ticker,
+                    start=start,
+                    end=end,
+                    auto_adjust=True,
+                    progress=False,
+                    threads=False,
+                )
+
+                if not data.empty:
+                    close = data["Close"].copy()
+
+                    if isinstance(close, pd.DataFrame):
+                        close = close.iloc[:, 0]
+
+                    close.name = ticker
+                    all_data[ticker] = close
+
+                    success = True
+                    break
+
+                time.sleep(1)
+
+            except Exception as e:
+                print(f"Attempt {attempt + 1} failed for {ticker}: {e}")
+                time.sleep(2)
+
+        if not success:
+            print(f"Skipping {ticker}")
+
+    if not all_data:
+        raise RuntimeError("No market data returned from yfinance")
+
+    close = pd.DataFrame(all_data)
+
+    close.index = pd.to_datetime(close.index)
+    close = close.sort_index().ffill().dropna(how="all")
+
+    store_cached("prices", cache_key, close)
+
+    return close
+
+
+def fetch_volume_data(ticker: str, start: str, end: str) -> pd.Series:
+    cache_key = f"{ticker}|{start}|{end}"
+
+    cached = load_cached("volume", cache_key, ttl_seconds=6 * 60 * 60)
+
+    if cached is not None:
+        return cached
+
+    try:
+        data = yf.download(
+            ticker,
+            start=start,
+            end=end,
+            auto_adjust=False,
+            progress=False,
+            threads=False,
+        )
+
+        if data.empty:
+            return pd.Series(dtype=float)
+
+        volume = data["Volume"].copy()
+
+        if isinstance(volume, pd.DataFrame):
+            volume = volume.iloc[:, 0]
+
+        volume.index = pd.to_datetime(volume.index)
+
+        store_cached("volume", cache_key, volume)
+
+        return volume
+
+    except Exception as e:
+        print(f"Volume fetch failed for {ticker}: {e}")
+        return pd.Series(dtype=float)
+
+
+def fetch_benchmark_data(start: str, end: str) -> pd.Series:
+    frame = fetch_price_data([BENCHMARK], start, end)
+
+    series = frame.iloc[:, 0]
+    series.name = BENCHMARK
+
+    return series
+
+
+def fetch_macro_data(start: str, end: str) -> pd.DataFrame:
+    cache_key = f"{start}|{end}"
+
+    cached = load_cached("macro", cache_key, ttl_seconds=24 * 60 * 60)
+
+    if cached is not None:
+        return cached
+
+    macro_series: dict[str, pd.Series] = {}
+
+    for name, fred_id in FRED_SERIES.items():
+        try:
+            print(f"Fetching macro series: {fred_id}")
+
+            url = (
+                f"https://api.stlouisfed.org/fred/series/observations"
+                f"?series_id={fred_id}"
+                f"&api_key={FRED_API_KEY}"
+                f"&file_type=json"
+            )
+
+            response = _retry_get(url, timeout=10, attempts=3)
+
+            data = response.json()
+
+            observations = data.get("observations", [])
+
+            if not observations:
+                print(f"No observations returned for {fred_id}")
                 continue
-            df = s.reset_index()
-            df.columns = ["Date", "Close"]
-            df["Ticker"] = t
-            rows.append(df[["Date", "Ticker", "Close"]])
 
-    close = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["Date", "Ticker", "Close"])
+            frame = pd.DataFrame(observations)
 
-    bench_s = _stooq_close_series(BENCHMARK)
-    if not bench_s.empty:
-        bdf = bench_s.reset_index()
-        bdf.columns = ["Date", "Close"]
-        bdf["sp_return"] = bdf["Close"].pct_change()
-        sp = bdf[["Date", "sp_return"]].copy()
-    else:
-        sp = pd.DataFrame(columns=["Date", "sp_return"])
-
-    if not close.empty and pd.to_numeric(close["Close"], errors="coerce").dropna().shape[0] >= 200:
-        return close, sp
-
-    data = _download_yf_with_timeout(
-        TICKERS,
-        start=START_DATE,
-        end=END_DATE,
-        auto_adjust=True,
-        progress=False,
-    )
-
-    sp500 = _download_yf_with_timeout(
-        BENCHMARK,
-        start=START_DATE,
-        end=END_DATE,
-        auto_adjust=True,
-        progress=False,
-    )
-
-    if data is None or getattr(data, "empty", True):
-        close = pd.DataFrame(columns=["Date", "Ticker", "Close"])
-    else:
-        if isinstance(data.columns, pd.MultiIndex) and "Close" in data.columns.get_level_values(0):
-            close = data["Close"].stack().reset_index()
-            close.columns = ["Date", "Ticker", "Close"]
-
-        elif "Close" in data.columns:
-            close = data[["Close"]].reset_index()
-            close["Ticker"] = TICKERS[0] if len(TICKERS) else ""
-            close = close[["Date", "Ticker", "Close"]]
-        else:
-            close = pd.DataFrame(columns=["Date", "Ticker", "Close"])
-
-    # If Yahoo is blocked, it can return frames full of NaNs. If so, fill from Stooq.
-    if close.empty or pd.to_numeric(close.get("Close", pd.Series(dtype=float)), errors="coerce").dropna().empty:
-        rows = []
-        for t in TICKERS:
-            s = _stooq_close_series(t)
-            if s.empty:
+            if "date" not in frame.columns or "value" not in frame.columns:
+                print(f"Invalid FRED response for {fred_id}")
                 continue
-            df = s.reset_index()
-            df.columns = ["Date", "Close"]
-            df["Ticker"] = t
-            rows.append(df[["Date", "Ticker", "Close"]])
-        close = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["Date", "Ticker", "Close"])
 
-    if sp500 is None or getattr(sp500, "empty", True) or "Close" not in sp500.columns:
-        sp500 = pd.DataFrame()
+            frame["date"] = pd.to_datetime(frame["date"], errors="coerce")
 
-    if sp500.empty:
-        s = _stooq_close_series(BENCHMARK)
-        if s.empty:
-            sp = pd.DataFrame(columns=["Date", "sp_return"])
-        else:
-            df = s.reset_index()
-            df.columns = ["Date", "Close"]
-            df["sp_return"] = df["Close"].pct_change()
-            sp = df[["Date", "sp_return"]].copy()
-    else:
-        sp500 = sp500.copy()
-        sp500["sp_return"] = sp500["Close"].pct_change()
-        sp = sp500[["sp_return"]].reset_index()
+            frame["value"] = pd.to_numeric(
+                frame["value"].replace(".", pd.NA),
+                errors="coerce",
+            )
 
-    return close, sp
+            series = frame.set_index("date")["value"].sort_index()
+
+            macro_series[name] = series
+
+        except Exception as e:
+            print(f"Failed macro series {fred_id}: {e}")
+
+    if not macro_series:
+        raise RuntimeError("No macroeconomic data could be fetched")
+
+    macro = pd.DataFrame(macro_series).sort_index()
+
+    date_index = pd.date_range(start=start, end=end, freq="B")
+
+    macro = macro.reindex(date_index).ffill().bfill()
+
+    if "inflation" in macro.columns:
+        inflation_base = macro["inflation"].shift(12 * 21)
+
+        macro["inflation"] = (
+            (macro["inflation"] / inflation_base) - 1
+        )
+
+        macro["inflation"] = macro["inflation"].ffill().bfill()
+
+    store_cached("macro", cache_key, macro)
+
+    return macro
+
+
+def normalize_inputs(
+    tickers: list[str] | None,
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[list[str], str, str]:
+
+    parsed_tickers = [
+        ticker.strip().upper()
+        for ticker in (tickers or [])
+        if ticker.strip()
+    ]
+
+    if not parsed_tickers:
+        from config import TICKERS, START_DATE, END_DATE
+
+        return (
+            TICKERS,
+            start_date or START_DATE,
+            end_date or END_DATE,
+        )
+
+    return (
+        parsed_tickers,
+        start_date or "2018-01-01",
+        end_date or datetime.today().strftime("%Y-%m-%d"),
+    )

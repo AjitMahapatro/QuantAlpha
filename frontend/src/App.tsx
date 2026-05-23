@@ -1,578 +1,726 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { startTransition, useEffect, useMemo, useState } from 'react';
 import Plot from 'react-plotly.js';
-import { PortfolioOverview } from './components/PortfolioOverview';
-import { BacktestChart } from './components/BacktestChart';
-import { ResearchSignalsComponent } from './components/ResearchSignals';
-import { BestPick } from './components/BestPick';
-import { MarketPulsePanel } from './components/MarketPulsePanel';
-import { Header, type HeaderPage } from './components/Header';
-import { LoadingSpinner } from './components/LoadingSpinner';
 import { apiService } from './services/api';
-import { PortfolioData, BacktestData, ResearchSignals as ISignals } from './types';
+import { AnalyticsSnapshot } from './types';
+
+type PageKey =
+  | 'market'
+  | 'portfolio'
+  | 'risk'
+  | 'forecasting'
+  | 'backtesting'
+  | 'macro';
+
+const pages: Array<{ key: PageKey; label: string }> = [
+  { key: 'market', label: 'Market Overview' },
+  { key: 'portfolio', label: 'Portfolio Analytics' },
+  { key: 'risk', label: 'Risk Analysis' },
+  { key: 'forecasting', label: 'ML Forecasting' },
+  { key: 'backtesting', label: 'Backtesting Results' },
+  { key: 'macro', label: 'Economic Indicators' },
+];
+
+const defaultRange = () => {
+  const today = new Date();
+  const end = today.toISOString().slice(0, 10);
+  const start = new Date(today.getFullYear() - 5, today.getMonth(), today.getDate())
+    .toISOString()
+    .slice(0, 10);
+  return { start, end };
+};
+
+const metricLabel = (key: string) =>
+  key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const percentMetricKeys = new Set([
+  'cumulative_return',
+  'cagr',
+  'alpha',
+  'max_drawdown',
+  'rolling_volatility',
+  'annualized_volatility',
+  'annual_return',
+  'annual_volatility',
+]);
+
+const chartLayout = {
+  autosize: true,
+  paper_bgcolor: '#ffffff',
+  plot_bgcolor: '#ffffff',
+  margin: { l: 42, r: 16, t: 12, b: 36 },
+  font: { color: '#1f2937', family: 'IBM Plex Sans, Segoe UI, sans-serif', size: 12 },
+  hovermode: 'x unified' as const,
+  xaxis: {
+    type: 'date' as const,
+    gridcolor: '#e5e7eb',
+    zerolinecolor: '#e5e7eb',
+    tickformat: '%b %Y',
+    tickangle: -45,
+    automargin: true,
+  },
+  yaxis: {
+    gridcolor: '#e5e7eb',
+    zerolinecolor: '#e5e7eb',
+    automargin: true,
+  },
+  legend: { orientation: 'h' as const, y: -0.22, x: 0, traceorder: 'normal' as const },
+};
+
+const chartHeights = {
+  default: 420,
+  compact: 340,
+  large: 460,
+};
+
+const plotConfig = { displayModeBar: false, responsive: true };
+const plotStyle = { width: '100%', height: '100%' } as const;
+
+const buildLayout = (overrides: Record<string, any> = {}) => ({
+  ...chartLayout,
+  ...overrides,
+  xaxis: { ...chartLayout.xaxis, ...(overrides.xaxis || {}) },
+  yaxis: { ...chartLayout.yaxis, ...(overrides.yaxis || {}) },
+  legend: { ...chartLayout.legend, ...(overrides.legend || {}) },
+});
+
+const normalizeSeries = (series: Record<string, number[]>) =>
+  Object.fromEntries(
+    Object.entries(series).map(([seriesName, values]) => {
+      const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+      const variance = values.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / values.length;
+      const std = Math.sqrt(variance) || 1;
+      return [seriesName, values.map((value) => (value - mean) / std)];
+    }),
+  ) as Record<string, number[]>;
 
 function App() {
-  const DEFAULT_FAST_TICKERS = 'AAPL,MSFT,NVDA';
-  const PRESET_UNIVERSES: Record<string, string> = {
-    'US 3 (Recommended)': DEFAULT_FAST_TICKERS,
-    'US 10': 'AAPL,MSFT,NVDA,JPM,GS,JNJ,PFE,PG,KO,XOM',
-    'Big Tech': 'AAPL,MSFT,NVDA,GOOGL,AMZN,META,TSLA',
-    'Defensive': 'JNJ,PFE,PG,KO,PEP,WMT,COST',
+  const range = useMemo(() => defaultRange(), []);
+  const [activePage, setActivePage] = useState<PageKey>('market');
+  const [snapshot, setSnapshot] = useState<AnalyticsSnapshot | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tickers, setTickers] = useState('AAPL,MSFT,NVDA,JPM,XOM');
+  const [startDate, setStartDate] = useState(range.start);
+  const [endDate, setEndDate] = useState(range.end);
+
+  const fetchSnapshot = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await apiService.getSnapshot({
+        tickers,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      startTransition(() => {
+        setSnapshot(data);
+      });
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Failed to load analytics snapshot');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const defaultDateRange = useMemo(() => {
-    const today = new Date();
-    const end = today.toISOString().slice(0, 10);
-    const start = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate())
-      .toISOString()
-      .slice(0, 10);
-    return { start, end };
+  useEffect(() => {
+    fetchSnapshot();
   }, []);
 
-  const [activePage, setActivePage] = useState<HeaderPage>('dashboard');
-  const [portfolioData, setPortfolioData] = useState<PortfolioData | null>(null);
-  const [backtestData, setBacktestData] = useState<BacktestData | null>(null);
-  const [signalsData, setSignalsData] = useState<ISignals | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [blockingLoad, setBlockingLoad] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const hasVisibleDataRef = useRef(false);
-  const latestRequestIdRef = useRef(0);
-  const lastLoadedQueryRef = useRef('');
-
-  const [appliedSettings, setAppliedSettings] = useState(() => ({
-    tickers: DEFAULT_FAST_TICKERS,
-    start_date: defaultDateRange.start,
-    end_date: defaultDateRange.end,
-    refreshSeconds: 60,
-  }));
-
-  const [draftSettings, setDraftSettings] = useState(() => ({
-    tickers: DEFAULT_FAST_TICKERS,
-    start_date: defaultDateRange.start,
-    end_date: defaultDateRange.end,
-    refreshSeconds: 60,
-  }));
-
-  const readCachedSnapshot = () => {
-    try {
-      const raw = window.localStorage.getItem('qa_last_snapshot');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { portfolio: PortfolioData; backtest: BacktestData; signals: ISignals };
-      const signalCount = Object.keys(parsed?.signals || {}).length;
-      if (signalCount > 0 && signalCount < 10) {
-        window.localStorage.removeItem('qa_last_snapshot');
-        return null;
-      }
-      return parsed;
-    } catch {
-      return null;
-    }
-  };
-
-  const getSnapshotTimeoutMs = (startDate?: string, endDate?: string, blocking = false) => {
-    const startMs = startDate ? Date.parse(startDate) : NaN;
-    const endMs = endDate ? Date.parse(endDate) : NaN;
-    const years =
-      Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs
-        ? (endMs - startMs) / (1000 * 60 * 60 * 24 * 365)
-        : 1;
-
-    let timeoutMs = 30000;
-    if (years >= 15) timeoutMs = 120000;
-    else if (years >= 10) timeoutMs = 90000;
-    else if (years >= 5) timeoutMs = 60000;
-    else if (years >= 2) timeoutMs = 45000;
-
-    return blocking ? Math.min(timeoutMs, 45000) : timeoutMs;
-  };
-
-  const fetchData = useCallback(async (options?: { blocking?: boolean }) => {
-    const requestId = ++latestRequestIdRef.current;
-    const isBlocking = options?.blocking ?? !hasVisibleDataRef.current;
-
-    const withTimeout = async <T,>(promise: Promise<T>, ms: number): Promise<T | null> =>
-      new Promise((resolve) => {
-        const id = window.setTimeout(() => resolve(null), ms);
-        promise
-          .then((value) => {
-            window.clearTimeout(id);
-            resolve(value);
-          })
-          .catch(() => {
-            window.clearTimeout(id);
-            resolve(null);
-          });
-      });
-
-    try {
-      setLoading(true);
-      if (isBlocking) {
-        setBlockingLoad(true);
-      }
-      setError(null);
-
-      const params = {
-        tickers: appliedSettings.tickers || undefined,
-        start_date: appliedSettings.start_date || undefined,
-        end_date: appliedSettings.end_date || undefined,
-      };
-      const queryKey = JSON.stringify(params);
-      const timeoutMs = getSnapshotTimeoutMs(params.start_date, params.end_date, isBlocking);
-
-      const snapshot = await withTimeout(apiService.getSnapshot(params, timeoutMs), timeoutMs);
-      const hasSignalData = (s: ISignals | null | undefined) => {
-        if (!s) return false;
-        return Object.values(s).some((v) => (v['1D'] ?? 0) !== 0 || (v['5D'] ?? 0) !== 0 || (v['20D'] ?? 0) !== 0);
-      };
-
-      const isMeaningfulSnapshot = snapshot
-        && (
-          snapshot.backtest.dates.length > 0
-          || snapshot.portfolio.expected_return !== 0
-          || snapshot.portfolio.volatility !== 0
-          || snapshot.portfolio.sharpe_ratio !== 0
-          || hasSignalData(snapshot.signals)
-        );
-
-      if (isMeaningfulSnapshot) {
-        if (requestId !== latestRequestIdRef.current) return;
-        setPortfolioData(snapshot.portfolio);
-        setBacktestData(snapshot.backtest);
-        setSignalsData(snapshot.signals);
-        lastLoadedQueryRef.current = queryKey;
-        window.localStorage.setItem('qa_last_snapshot', JSON.stringify(snapshot));
-        setError(null);
-      } else {
-        if (requestId !== latestRequestIdRef.current) return;
-        if (hasVisibleDataRef.current) {
-          if (queryKey !== lastLoadedQueryRef.current) {
-            setError(`Could not load new settings in ${Math.round(timeoutMs / 1000)}s. Dashboard is still showing previous loaded range.`);
-          } else {
-            setError(null);
-          }
-        } else if (queryKey !== lastLoadedQueryRef.current) {
-          setError(`Could not load new settings in ${Math.round(timeoutMs / 1000)}s. No fresh data available for this range yet.`);
-        } else {
-          const cached = readCachedSnapshot();
-          if (cached) {
-            setPortfolioData(cached.portfolio);
-            setBacktestData(cached.backtest);
-            setSignalsData(cached.signals);
-            setError(`Live data timed out at ${Math.round(timeoutMs / 1000)}s. Showing cached snapshot.`);
-          } else {
-            setError(`Timed out at ${Math.round(timeoutMs / 1000)}s. Reduce date range/tickers.`);
-          }
-        }
-      }
-    } catch (err) {
-      if (requestId !== latestRequestIdRef.current) return;
-      setError(err instanceof Error ? err.message : 'Failed to fetch data');
-    } finally {
-      if (requestId === latestRequestIdRef.current) {
-        setLoading(false);
-        setBlockingLoad(false);
-      }
-    }
-  }, [appliedSettings.tickers, appliedSettings.start_date, appliedSettings.end_date]);
-
-  useEffect(() => {
-    hasVisibleDataRef.current = Boolean(portfolioData || backtestData || signalsData);
-  }, [portfolioData, backtestData, signalsData]);
-
-  useEffect(() => {
-    const cached = readCachedSnapshot();
-    if (cached) {
-      setPortfolioData(cached.portfolio);
-      setBacktestData(cached.backtest);
-      setSignalsData(cached.signals);
-    }
-    fetchData({ blocking: true });
-  }, [fetchData]);
-
-  useEffect(() => {
-    if (!appliedSettings.refreshSeconds || appliedSettings.refreshSeconds <= 0) return;
-    const id = window.setInterval(() => {
-      fetchData({ blocking: false });
-    }, appliedSettings.refreshSeconds * 1000);
-    return () => window.clearInterval(id);
-  }, [appliedSettings.refreshSeconds, fetchData]);
-
-  const computeDrawdown = (curve: number[]) => {
-    let peak = -Infinity;
-    return curve.map((value) => {
-      peak = Math.max(peak, value);
-      return peak > 0 ? (value / peak) - 1 : 0;
-    });
-  };
-
-  const computeRollingSharpe = (curve: number[], windowSize = 63) => {
-    if (curve.length < windowSize + 1) return [] as number[];
-    const returns = curve.slice(1).map((value, index) => (value / curve[index]) - 1);
-    const output: number[] = [];
-
-    for (let index = 0; index < returns.length; index += 1) {
-      if (index < windowSize - 1) {
-        output.push(NaN);
-        continue;
-      }
-
-      const slice = returns.slice(index - windowSize + 1, index + 1);
-      const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
-      const variance = slice.reduce((a, b) => a + (b - mean) * (b - mean), 0) / slice.length;
-      const std = Math.sqrt(variance);
-      output.push(std > 0 ? (mean / std) * Math.sqrt(252) : 0);
-    }
-
-    return output;
-  };
-
-  const applyDatePresetYears = (years: number) => {
-    const today = new Date();
-    const end = today.toISOString().slice(0, 10);
-    const start = new Date(today.getFullYear() - years, today.getMonth(), today.getDate())
-      .toISOString()
-      .slice(0, 10);
-    setDraftSettings((settings) => ({ ...settings, start_date: start, end_date: end }));
-  };
-
-  const normalizeTickers = (raw: string) =>
-    raw
-      .split(',')
-      .map((ticker) => ticker.trim().toUpperCase())
-      .filter(Boolean)
-      .join(',');
-
-  const getDatePresetRange = (years: number) => {
-    const today = new Date();
-    const end = today.toISOString().slice(0, 10);
-    const start = new Date(today.getFullYear() - years, today.getMonth(), today.getDate())
-      .toISOString()
-      .slice(0, 10);
-    return { start, end };
-  };
-
-  const presetButtonClass = (selected: boolean) =>
-    selected ? 'preset-button preset-button-active' : 'preset-button';
-
-  const draftTickerCount = normalizeTickers(draftSettings.tickers).split(',').filter(Boolean).length;
-  const draftYears = (() => {
-    const startMs = draftSettings.start_date ? Date.parse(draftSettings.start_date) : NaN;
-    const endMs = draftSettings.end_date ? Date.parse(draftSettings.end_date) : NaN;
-    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return 1;
-    return (endMs - startMs) / (1000 * 60 * 60 * 24 * 365);
-  })();
-  const isHeavyDraftQuery =
-    (draftTickerCount >= 7 && draftYears >= 5)
-    || (draftTickerCount >= 10 && draftYears >= 3)
-    || (draftTickerCount >= 5 && draftYears >= 10);
-
-  const applySmartDefaults = () => {
-    applyDatePresetYears(1);
-    setDraftSettings((settings) => ({
-      ...settings,
-      tickers: DEFAULT_FAST_TICKERS,
-      refreshSeconds: 60,
-    }));
-  };
-
-  const hasUsablePortfolioData = Boolean(
-    portfolioData
-    && (
-      portfolioData.expected_return !== 0
-      || portfolioData.volatility !== 0
-      || portfolioData.sharpe_ratio !== 0
-      || Object.values(portfolioData.risk_contribution || {}).some((value) => value !== 0)
-    )
+  const renderMetricCards = (metrics: Record<string, number>) => (
+    <div className="metric-grid">
+      {Object.entries(metrics).map(([key, value]) => (
+        <article className="metric-card" key={key}>
+          <div className="metric-label">{metricLabel(key)}</div>
+          <div className="metric-value">
+            {percentMetricKeys.has(key) ? `${(value * 100).toFixed(2)}%` : value.toFixed(3)}
+          </div>
+        </article>
+      ))}
+    </div>
   );
 
-  const hasUsableBacktestData = Boolean(
-    backtestData
-    && backtestData.dates.length > 0
-    && backtestData.portfolio_curve.length > 0
-  );
-
-  if (blockingLoad) {
+  const renderMarketPage = () => {
+    if (!snapshot) return null;
+    const market = snapshot.market_overview;
     return (
-      <div className="app-shell">
-        <LoadingSpinner />
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Universe Performance</h2>
+            <p>Cumulative return paths for the selected research universe.</p>
+          </div>
+          <div className="plot-card">
+            <Plot
+              data={Object.entries(market.cumulative_returns).map(([ticker, values]) => ({
+                x: market.dates,
+                y: values,
+                type: 'scatter',
+                mode: 'lines',
+                line: { shape: 'spline', smoothing: 1.1 },
+                connectgaps: true,
+                name: ticker,
+              }))}
+              layout={buildLayout({ height: chartHeights.default, yaxis: { tickformat: '.0%' }, hovermode: 'x unified' })}
+              config={plotConfig}
+              style={plotStyle}
+              useResizeHandler
+            />
+          </div>
+        </section>
+
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Rolling Portfolio Volatility</h2>
+              <p>21-day annualized volatility for an equal-weight portfolio.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: market.dates,
+                  y: market.rolling_volatility,
+                  type: 'scatter',
+                  mode: 'lines',
+                  name: 'Volatility',
+                  line: { color: '#1d4ed8', shape: 'spline', smoothing: 1.1 },
+                }]}
+                layout={buildLayout({ height: chartHeights.compact, yaxis: { tickformat: '.0%' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Return Correlation</h2>
+              <p>Cross-asset daily return correlation matrix.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: market.correlation.labels,
+                  y: market.correlation.labels,
+                  z: market.correlation.matrix,
+                  type: 'heatmap',
+                  colorscale: 'Blues',
+                  xgap: 2,
+                  ygap: 2,
+                  hovertemplate: '%{y} / %{x}: %{z}<extra></extra>',
+                }]}
+                layout={buildLayout({ height: chartHeights.compact, margin: { l: 40, r: 16, t: 12, b: 40 }, xaxis: { tickangle: -45 } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Latest Prices</h2>
+            <p>Most recent close pulled from the historical data window.</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Latest Close</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(market.latest_prices).map(([ticker, price]) => (
+                  <tr key={ticker}>
+                    <td>{ticker}</td>
+                    <td>{price.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     );
-  }
+  };
+
+  const renderPortfolioPage = () => {
+    if (!snapshot) return null;
+    const portfolio = snapshot.portfolio_analytics;
+    return (
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Portfolio Performance Metrics</h2>
+            <p>Equal-weight baseline portfolio metrics computed from daily returns.</p>
+          </div>
+          {renderMetricCards(portfolio.metrics)}
+        </section>
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Weight Allocation</h2>
+              <p>Simple equal-weight portfolio used as the analytical baseline.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{ labels: Object.keys(portfolio.weights), values: Object.values(portfolio.weights), type: 'pie', hole: 0.45 }]}
+                layout={buildLayout({ height: chartHeights.compact, margin: { l: 12, r: 12, t: 12, b: 12 } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Risk Contribution</h2>
+              <p>Relative contribution based on component return volatility.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{ x: Object.keys(portfolio.risk_contribution), y: Object.values(portfolio.risk_contribution), type: 'bar', marker: { color: '#2563eb' } }]}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { title: 'Ticker' }, yaxis: { ...chartLayout.yaxis, title: 'Risk Contribution', tickformat: '.1f' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Ticker Summary</h2>
+            <p>Per-asset return and volatility profile for the selected window.</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Annual Return</th>
+                  <th>Annual Volatility</th>
+                  <th>Cumulative Return</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolio.ticker_summary.map((row) => (
+                  <tr key={row.ticker}>
+                    <td>{row.ticker}</td>
+                    <td>{(row.annual_return * 100).toFixed(2)}%</td>
+                    <td>{(row.annual_volatility * 100).toFixed(2)}%</td>
+                    <td>{(row.cumulative_return * 100).toFixed(2)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  const renderRiskPage = () => {
+    if (!snapshot) return null;
+    const risk = snapshot.risk_analysis;
+    return (
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Risk Metrics</h2>
+            <p>Core downside, relative performance, and volatility diagnostics.</p>
+          </div>
+          {renderMetricCards({ ...risk.metrics, var_95: risk.var_95, cvar_95: risk.cvar_95 })}
+        </section>
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Drawdown Curve</h2>
+              <p>Peak-to-trough loss profile for the equal-weight portfolio.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: risk.drawdown_dates,
+                  y: risk.drawdown_curve,
+                  type: 'scatter',
+                  mode: 'lines',
+                  fill: 'tozeroy',
+                  name: 'Drawdown',
+                  line: { color: '#b91c1c', shape: 'spline', smoothing: 1.1 },
+                }]}
+                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Return Distribution</h2>
+              <p>Daily return histogram for quick tail-risk inspection.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{ x: risk.return_distribution, type: 'histogram', marker: { color: '#0f766e' } }]}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { ...chartLayout.xaxis, tickformat: '.1%' }, yaxis: { title: 'Frequency' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  const renderForecastingPage = () => {
+    if (!snapshot) return null;
+    const forecasting = snapshot.ml_forecasting;
+    return (
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Market Trend Forecasting Experiment</h2>
+            <p>
+              Chronological train/test split on {forecasting.ticker}. This module explores whether technical and macroeconomic indicators provide useful signals for short-term market direction using a leakage-aware time-series workflow.
+              while avoiding temporal leakage.
+            </p>
+          </div>
+          {renderMetricCards(forecasting.metrics)}
+          <div className="insight-strip">
+            <div>
+              <strong>Latest prediction date:</strong> {forecasting.prediction.date}
+            </div>
+            <div>
+              <strong>Probability of upward move:</strong> {(forecasting.prediction.probability_up * 100).toFixed(2)}%
+            </div>
+            <div>
+              <strong>Prediction confidence:</strong> {(forecasting.prediction.confidence * 100).toFixed(2)}%
+            </div>
+          </div>
+        </section>
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Feature Importance</h2>
+              <p>Model-level importance for the engineered technical and macro features.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: forecasting.feature_importance.slice().sort((a, b) => b.importance - a.importance).map((row) => row.importance),
+                  y: forecasting.feature_importance.slice().sort((a, b) => b.importance - a.importance).map((row) => row.feature),
+                  type: 'bar',
+                  orientation: 'h',
+                  marker: { color: '#1d4ed8' },
+                }]}
+                layout={buildLayout({
+                  height: chartHeights.compact,
+                  margin: { l: 160, r: 16, t: 12, b: 36 },
+                  xaxis: { title: 'Importance' },
+                })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Local Explanation</h2>
+              <p>Per-feature contribution for the latest prediction using XGBoost contribution scores.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: forecasting.shap_values.slice().sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution)).map((row) => row.contribution),
+                  y: forecasting.shap_values.slice().sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution)).map((row) => row.feature),
+                  type: 'bar',
+                  orientation: 'h',
+                  marker: { color: '#0f766e' },
+                }]}
+                layout={buildLayout({
+                  height: chartHeights.compact,
+                  margin: { l: 160, r: 16, t: 12, b: 36 },
+                  xaxis: { title: 'Contribution' },
+                })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Prediction Confidence Over Test Window</h2>
+              <p>Out-of-sample class probabilities on the held-out time period.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: forecasting.test_dates,
+                  y: forecasting.test_probabilities,
+                  type: 'scatter',
+                  mode: 'lines+markers',
+                  name: 'P(up)',
+                  line: { shape: 'spline', smoothing: 1.1 },
+                  marker: { size: 4 },
+                }]}
+                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, range: [0, 1], tickformat: '.0%' }, xaxis: { ...chartLayout.xaxis, tickformat: '%b %Y' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Confusion Matrix</h2>
+              <p>Prediction accuracy split across up and down market classes.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{
+                  x: ['Pred Down', 'Pred Up'],
+                  y: ['Actual Down', 'Actual Up'],
+                  z: forecasting.confusion_matrix,
+                  type: 'heatmap',
+                  colorscale: 'Greens',
+                  xgap: 2,
+                  ygap: 2,
+                  hovertemplate: '%{y} / %{x}: %{z}<extra></extra>',
+                }]}
+                layout={buildLayout({ height: chartHeights.compact, margin: { l: 60, r: 16, t: 24, b: 60 }, xaxis: { tickangle: -45 }, yaxis: { automargin: true } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  const renderBacktestingPage = () => {
+    if (!snapshot) return null;
+    const backtest = snapshot.backtesting;
+    return (
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Strategy Performance</h2>
+            <p>Rules-based long-only strategy compared with the benchmark.</p>
+          </div>
+          {renderMetricCards(backtest.metrics)}
+        </section>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Cumulative Strategy vs Benchmark</h2>
+            <p>Signal execution is lagged by one day to keep the backtest realistic.</p>
+          </div>
+          <div className="plot-card">
+            <Plot
+              data={[
+                { x: backtest.dates, y: backtest.strategy_curve, type: 'scatter', mode: 'lines', name: 'Strategy', line: { shape: 'spline', smoothing: 1.1 } },
+                { x: backtest.dates, y: backtest.benchmark_curve, type: 'scatter', mode: 'lines', name: 'Benchmark', line: { shape: 'spline', smoothing: 1.1 } },
+              ]}
+              layout={buildLayout({ height: chartHeights.default })}
+              config={plotConfig}
+              style={plotStyle}
+              useResizeHandler
+            />
+          </div>
+        </section>
+        <section className="panel two-column">
+          <div>
+            <div className="panel-head">
+              <h2>Backtest Drawdown</h2>
+              <p>Portfolio pain profile during adverse periods.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{ x: backtest.dates, y: backtest.drawdown_curve, type: 'scatter', mode: 'lines', fill: 'tozeroy', line: { color: '#b91c1c', shape: 'spline', smoothing: 1.1 } }]}
+                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+          <div>
+            <div className="panel-head">
+              <h2>Average Signal Strength</h2>
+              <p>Share of time each asset was held by the strategy.</p>
+            </div>
+            <div className="plot-card compact">
+              <Plot
+                data={[{ x: Object.keys(backtest.signal_strength), y: Object.values(backtest.signal_strength), type: 'bar', marker: { color: '#7c3aed' } }]}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { title: 'Ticker' }, yaxis: { title: 'Signal Share' } })}
+                config={plotConfig}
+                style={plotStyle}
+                useResizeHandler
+              />
+            </div>
+          </div>
+        </section>
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Trade Diagnostics</h2>
+            <p>Simple counts help explain how active the strategy was per asset.</p>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ticker</th>
+                  <th>Entries</th>
+                  <th>Exits</th>
+                  <th>Average Signal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {backtest.trades.map((trade) => (
+                  <tr key={trade.ticker}>
+                    <td>{trade.ticker}</td>
+                    <td>{trade.entries}</td>
+                    <td>{trade.exits}</td>
+                    <td>{trade.avg_signal.toFixed(3)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
+  const renderMacroPage = () => {
+    if (!snapshot) return null;
+    const macro = snapshot.economic_indicators;
+    return (
+      <div className="page-grid">
+        <section className="panel">
+          <div className="panel-head">
+            <h2>Macroeconomic Context</h2>
+            <p>FRED series are forward-filled to align with the trading calendar used by the analytics pipeline.</p>
+          </div>
+          <div className="plot-card">
+            <Plot
+              data={Object.entries(normalizeSeries(macro.series)).map(([seriesName, values]) => ({
+                x: macro.dates,
+                y: values,
+                type: 'scatter',
+                mode: 'lines',
+                connectgaps: true,
+                line: { shape: 'spline', smoothing: 1.1 },
+                name: metricLabel(seriesName),
+              }))}
+              layout={buildLayout({
+                height: chartHeights.default,
+                yaxis: { title: 'Normalized z-score', tickformat: '.1f' },
+                margin: { l: 48, r: 16, t: 12, b: 42 },
+              })}
+              config={plotConfig}
+              style={plotStyle}
+              useResizeHandler
+            />
+          </div>
+        </section>
+      </div>
+    );
+  };
 
   return (
     <div className="app-shell">
-      <Header activePage={activePage} onNavigate={setActivePage} />
-      <main className="app-main">
-        {error && (
-          <div className="alert alert-error" style={{ marginBottom: '1.5rem' }}>
-            {error}
-          </div>
-        )}
+      <header className="topbar">
+        <div>
+          <div className="eyebrow">QuantAlpha</div>
+          <h1>Quantitative Financial Analytics and Risk Analysis Platform</h1>
+          <p>
+            A data-science-first workspace for market analysis, portfolio risk, forecasting, and
+            strategy evaluation.
+          </p>
+        </div>
+        <div className="filter-card">
+          <label>
+            Tickers
+            <input value={tickers} onChange={(event) => setTickers(event.target.value.toUpperCase())} />
+          </label>
+          <label>
+            Start Date
+            <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+          </label>
+          <label>
+            End Date
+            <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+          </label>
+          <button className="primary-button" onClick={fetchSnapshot} disabled={loading}>
+            {loading ? 'Running Analysis...' : 'Run Analysis'}
+          </button>
+        </div>
+      </header>
 
-        {activePage === 'dashboard' && (
-          <div className="stack-lg fade-in-up">
-            {signalsData && <BestPick signals={signalsData} />}
-            {signalsData && <MarketPulsePanel signals={signalsData} />}
-            {hasUsablePortfolioData && portfolioData && <PortfolioOverview data={portfolioData} />}
-            {hasUsableBacktestData && backtestData && <BacktestChart data={backtestData} />}
-            {!hasUsablePortfolioData && !hasUsableBacktestData && signalsData && (
-              <div className="glass-effect panel alert-warning">
-                Portfolio optimization and backtest data are unavailable for this range right now.
-                Research signals are still shown from the loaded universe.
-              </div>
-            )}
-            {signalsData && <ResearchSignalsComponent data={signalsData} />}
-            {!signalsData && !portfolioData && !backtestData && (
-              <div className="glass-effect panel muted-text-strong">
-                No data loaded yet. Try fewer tickers or a shorter date range, then click Apply.
-              </div>
-            )}
-          </div>
-        )}
+      <nav className="page-tabs">
+        {pages.map((page) => (
+          <button
+            key={page.key}
+            className={page.key === activePage ? 'tab-active' : 'tab-button'}
+            onClick={() => setActivePage(page.key)}
+          >
+            {page.label}
+          </button>
+        ))}
+      </nav>
 
-        {activePage === 'analytics' && (
-          <div className="stack-lg fade-in-up">
-            <div className="glass-effect panel hover-glow">
-              <div className="floating-orb orb-top-right orb-large orb-fuchsia"></div>
-              <div className="floating-orb orb-bottom-left orb-large orb-sky"></div>
+      {error && <div className="error-banner">{error}</div>}
+
+      {loading && !snapshot ? (
+        <div className="empty-state">Running the data pipeline, feature engineering steps, and model evaluation.</div>
+      ) : (
+        <>
+          {snapshot && (
+            <section className="summary-strip">
               <div>
-                <h2 className="title-xl">Analytics</h2>
-                <p className="section-blurb">Real performance diagnostics from your current backtest.</p>
+                <span>Primary ticker</span>
+                <strong>{snapshot.meta.primary_ticker}</strong>
               </div>
-            </div>
-
-            {backtestData && (
-              <div className="glass-effect panel">
-                <h3 className="title-lg" style={{ marginBottom: '1rem' }}>Drawdown</h3>
-                <div className="chart-shell chart-shell-short">
-                  <Plot
-                    data={[
-                      {
-                        x: backtestData.dates,
-                        y: computeDrawdown(backtestData.portfolio_curve),
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Portfolio DD',
-                        line: { color: 'rgba(239,68,68,1)', width: 2 },
-                        fill: 'tozeroy',
-                        fillcolor: 'rgba(239,68,68,0.12)',
-                      },
-                    ] as any}
-                    layout={{
-                      autosize: true,
-                      paper_bgcolor: 'rgba(0,0,0,0)',
-                      plot_bgcolor: 'rgba(0,0,0,0)',
-                      margin: { l: 48, r: 18, t: 10, b: 40 },
-                      xaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      yaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' }, tickformat: '.0%' },
-                      legend: { orientation: 'h', font: { color: 'rgba(255,255,255,0.75)' } },
-                    } as any}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
+              <div>
+                <span>Universe</span>
+                <strong>{snapshot.meta.tickers.join(', ')}</strong>
               </div>
-            )}
-
-            {backtestData && (
-              <div className="glass-effect panel">
-                <h3 className="title-lg" style={{ marginBottom: '1rem' }}>Rolling Sharpe (63d)</h3>
-                <div className="chart-shell chart-shell-short">
-                  <Plot
-                    data={[
-                      {
-                        x: backtestData.dates.slice(1),
-                        y: computeRollingSharpe(backtestData.portfolio_curve, 63),
-                        type: 'scatter',
-                        mode: 'lines',
-                        name: 'Sharpe',
-                        line: { color: 'rgba(34,197,94,1)', width: 2 },
-                      },
-                    ] as any}
-                    layout={{
-                      autosize: true,
-                      paper_bgcolor: 'rgba(0,0,0,0)',
-                      plot_bgcolor: 'rgba(0,0,0,0)',
-                      margin: { l: 48, r: 18, t: 10, b: 40 },
-                      xaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      yaxis: { gridcolor: 'rgba(255,255,255,0.08)', tickfont: { color: 'rgba(255,255,255,0.7)' } },
-                      legend: { orientation: 'h', font: { color: 'rgba(255,255,255,0.75)' } },
-                    } as any}
-                    config={{ displayModeBar: false, responsive: true }}
-                    style={{ width: '100%', height: '100%' }}
-                    useResizeHandler
-                  />
-                </div>
+              <div>
+                <span>Date range</span>
+                <strong>
+                  {snapshot.meta.start_date} to {snapshot.meta.end_date}
+                </strong>
               </div>
-            )}
-          </div>
-        )}
-
-        {activePage === 'settings' && (
-          <div className="stack-lg fade-in-up">
-            <div className="glass-effect panel hover-glow">
-              <h2 className="title-xl">Settings</h2>
-              <p className="section-blurb">Edit values, use presets, then click Apply.</p>
-
-              <div className="settings-grid">
-                <div className="subpanel">
-                  <div className="title-md" style={{ marginBottom: '0.75rem' }}>Universe Presets</div>
-                  <div className="chip-group">
-                    {Object.entries(PRESET_UNIVERSES).map(([label, tickers]) => (
-                      <button
-                        key={label}
-                        type="button"
-                        className={presetButtonClass(normalizeTickers(draftSettings.tickers) === normalizeTickers(tickers))}
-                        onClick={() => setDraftSettings((settings) => ({ ...settings, tickers }))}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="subpanel">
-                  <div className="title-md" style={{ marginBottom: '0.75rem' }}>Date Presets</div>
-                  <div className="chip-group">
-                    {[1, 3, 5, 10, 20].map((years) => (
-                      <button
-                        key={years}
-                        type="button"
-                        className={presetButtonClass(
-                          draftSettings.start_date === getDatePresetRange(years).start
-                          && draftSettings.end_date === getDatePresetRange(years).end
-                        )}
-                        onClick={() => applyDatePresetYears(years)}
-                      >
-                        {years}Y
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="subpanel">
-                  <div className="title-md" style={{ marginBottom: '0.75rem' }}>Refresh Presets</div>
-                  <div className="chip-group">
-                    {[0, 30, 60, 120].map((seconds) => (
-                      <button
-                        key={seconds}
-                        type="button"
-                        className={presetButtonClass(draftSettings.refreshSeconds === seconds)}
-                        onClick={() => setDraftSettings((settings) => ({ ...settings, refreshSeconds: seconds }))}
-                      >
-                        {seconds === 0 ? 'Off' : `${seconds}s`}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div>
+                <span>Benchmark</span>
+                <strong>{snapshot.meta.benchmark}</strong>
               </div>
+            </section>
+          )}
 
-              <div className="field-grid">
-                <div>
-                  <label className="form-label">Tickers (comma-separated)</label>
-                  <input
-                    className="input-field"
-                    placeholder="AAPL,MSFT,NVDA"
-                    value={draftSettings.tickers}
-                    onChange={(event) => setDraftSettings((settings) => ({ ...settings, tickers: event.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Refresh interval (seconds)</label>
-                  <input
-                    className="input-field"
-                    type="number"
-                    min={0}
-                    placeholder="0 (off)"
-                    value={draftSettings.refreshSeconds}
-                    onChange={(event) => setDraftSettings((settings) => ({ ...settings, refreshSeconds: Number(event.target.value) }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">Start date</label>
-                  <input
-                    className="input-field"
-                    type="date"
-                    value={draftSettings.start_date}
-                    onChange={(event) => setDraftSettings((settings) => ({ ...settings, start_date: event.target.value }))}
-                  />
-                </div>
-
-                <div>
-                  <label className="form-label">End date</label>
-                  <input
-                    className="input-field"
-                    type="date"
-                    value={draftSettings.end_date}
-                    onChange={(event) => setDraftSettings((settings) => ({ ...settings, end_date: event.target.value }))}
-                  />
-                </div>
-              </div>
-
-              {isHeavyDraftQuery && (
-                <div className="alert alert-warning" style={{ marginTop: '1.25rem' }}>
-                  This combination is too heavy for free market data. Keep one side smaller:
-                  fewer companies or a shorter date range.
-                </div>
-              )}
-
-              <div className="controls-row">
-                <button
-                  type="button"
-                  className={presetButtonClass(
-                    normalizeTickers(draftSettings.tickers) === normalizeTickers(DEFAULT_FAST_TICKERS)
-                    && (() => {
-                      const range = getDatePresetRange(1);
-                      return draftSettings.start_date === range.start && draftSettings.end_date === range.end;
-                    })()
-                    && draftSettings.refreshSeconds === 60
-                  )}
-                  onClick={applySmartDefaults}
-                >
-                  Smart Defaults
-                </button>
-
-                <button
-                  type="button"
-                  className={`button button-primary ${isHeavyDraftQuery ? 'button-disabled' : ''}`.trim()}
-                  disabled={isHeavyDraftQuery}
-                  onClick={() => {
-                    setPortfolioData(null);
-                    setBacktestData(null);
-                    setSignalsData(null);
-                    setBlockingLoad(true);
-                    setLoading(true);
-                    setError(null);
-                    setAppliedSettings({ ...draftSettings });
-                    setActivePage('dashboard');
-                  }}
-                >
-                  Apply
-                </button>
-
-                <button
-                  type="button"
-                  className="button button-secondary"
-                  onClick={() => setDraftSettings({ ...appliedSettings })}
-                >
-                  Reset
-                </button>
-
-                <div className="applied-summary">
-                  Applied: {appliedSettings.tickers || '(default)'} | {appliedSettings.start_date || '(default)'} to {appliedSettings.end_date || '(default)'}
-                </div>
-              </div>
-
-              <div className="tip-text">
-                Tip: Smart Defaults = 3-ticker universe + 1Y range + 60s refresh.
-              </div>
-            </div>
-          </div>
-        )}
-      </main>
+          <main key={activePage} className="content-shell">
+            {activePage === 'market' && renderMarketPage()}
+            {activePage === 'portfolio' && renderPortfolioPage()}
+            {activePage === 'risk' && renderRiskPage()}
+            {activePage === 'forecasting' && renderForecastingPage()}
+            {activePage === 'backtesting' && renderBacktestingPage()}
+            {activePage === 'macro' && renderMacroPage()}
+          </main>
+        </>
+      )}
     </div>
   );
 }
