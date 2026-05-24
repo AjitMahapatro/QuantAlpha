@@ -53,10 +53,8 @@ const chartLayout = {
   font: { color: '#1f2937', family: 'IBM Plex Sans, Segoe UI, sans-serif', size: 12 },
   hovermode: 'x unified' as const,
   xaxis: {
-    type: 'date' as const,
     gridcolor: '#e5e7eb',
     zerolinecolor: '#e5e7eb',
-    tickformat: '%b %Y',
     tickangle: -45,
     automargin: true,
   },
@@ -162,7 +160,7 @@ function App() {
                 connectgaps: true,
                 name: ticker,
               }))}
-              layout={buildLayout({ height: chartHeights.default, yaxis: { tickformat: '.0%' }, hovermode: 'x unified' })}
+              layout={buildLayout({ height: chartHeights.default, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' }, yaxis: { tickformat: '.0%' }, hovermode: 'x unified' })}
               config={plotConfig}
               style={plotStyle}
               useResizeHandler
@@ -186,7 +184,7 @@ function App() {
                   name: 'Volatility',
                   line: { color: '#1d4ed8', shape: 'spline', smoothing: 1.1 },
                 }]}
-                layout={buildLayout({ height: chartHeights.compact, yaxis: { tickformat: '.0%' } })}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' }, yaxis: { tickformat: '.0%' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -283,7 +281,7 @@ function App() {
             <div className="plot-card compact">
               <Plot
                 data={[{ x: Object.keys(portfolio.risk_contribution), y: Object.values(portfolio.risk_contribution), type: 'bar', marker: { color: '#2563eb' } }]}
-                layout={buildLayout({ height: chartHeights.compact, xaxis: { title: 'Ticker' }, yaxis: { ...chartLayout.yaxis, title: 'Risk Contribution', tickformat: '.1f' } })}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { type: 'category', title: 'Ticker' }, yaxis: { ...chartLayout.yaxis, title: 'Risk Contribution', tickformat: '.1f' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -352,7 +350,7 @@ function App() {
                   name: 'Drawdown',
                   line: { color: '#b91c1c', shape: 'spline', smoothing: 1.1 },
                 }]}
-                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' }, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -474,7 +472,7 @@ function App() {
                   line: { shape: 'spline', smoothing: 1.1 },
                   marker: { size: 4 },
                 }]}
-                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, range: [0, 1], tickformat: '.0%' }, xaxis: { ...chartLayout.xaxis, tickformat: '%b %Y' } })}
+                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, range: [0, 1], tickformat: '.0%' }, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -533,7 +531,7 @@ function App() {
                 { x: backtest.dates, y: backtest.strategy_curve, type: 'scatter', mode: 'lines', name: 'Strategy', line: { shape: 'spline', smoothing: 1.1 } },
                 { x: backtest.dates, y: backtest.benchmark_curve, type: 'scatter', mode: 'lines', name: 'Benchmark', line: { shape: 'spline', smoothing: 1.1 } },
               ]}
-              layout={buildLayout({ height: chartHeights.default })}
+              layout={buildLayout({ height: chartHeights.default, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' } })}
               config={plotConfig}
               style={plotStyle}
               useResizeHandler
@@ -549,7 +547,7 @@ function App() {
             <div className="plot-card compact">
               <Plot
                 data={[{ x: backtest.dates, y: backtest.drawdown_curve, type: 'scatter', mode: 'lines', fill: 'tozeroy', line: { color: '#b91c1c', shape: 'spline', smoothing: 1.1 } }]}
-                layout={buildLayout({ height: chartHeights.compact, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' }, yaxis: { ...chartLayout.yaxis, tickformat: '.0%' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -564,7 +562,7 @@ function App() {
             <div className="plot-card compact">
               <Plot
                 data={[{ x: Object.keys(backtest.signal_strength), y: Object.values(backtest.signal_strength), type: 'bar', marker: { color: '#7c3aed' } }]}
-                layout={buildLayout({ height: chartHeights.compact, xaxis: { title: 'Ticker' }, yaxis: { title: 'Signal Share' } })}
+                layout={buildLayout({ height: chartHeights.compact, xaxis: { type: 'category', title: 'Ticker' }, yaxis: { title: 'Signal Share' } })}
                 config={plotConfig}
                 style={plotStyle}
                 useResizeHandler
@@ -627,6 +625,7 @@ function App() {
               }))}
               layout={buildLayout({
                 height: chartHeights.default,
+                xaxis: { ...chartLayout.xaxis, type: 'date', tickformat: '%b %Y' },
                 yaxis: { title: 'Normalized z-score', tickformat: '.1f' },
                 margin: { l: 48, r: 16, t: 12, b: 42 },
               })}
