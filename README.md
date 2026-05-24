@@ -228,6 +228,18 @@ Query parameters:
 
 The endpoint returns the full analytics snapshot used by the frontend pages.
 
+## 👥 Team
+
+| Role | Name |
+|---|---|
+| Team Leader | Ajit Mahapatro |
+| Team Member | G. Jyothi Charan |
+| Team Member | M. Naveen |
+| Team Member | A. Shanmukh |
+| Team Member | P. Leela Venkatesh |
+| Team Member | K. Kushwanth |
+| Team Member | K. Harsha |
+
 ## Notebooks and Research Structure
 
 - `notebooks/eda_market_structure.ipynb`
@@ -236,15 +248,6 @@ The endpoint returns the full analytics snapshot used by the frontend pages.
 - `notebooks/backtesting_analysis.ipynb`
 - `research/README.md`
 - `analysis/README.md`
-
-## Screenshots
-
-Add screenshots from the frontend to `analysis/screenshots/` and reference them here for portfolio submissions. Recommended captures:
-
-- Market Overview page
-- Risk Analysis page
-- ML Forecasting page
-- Backtesting Results page
 
 ## Limitations
 
