@@ -265,15 +265,3 @@ The endpoint returns the full analytics snapshot used by the frontend pages.
 - Add experiment tracking for repeated model runs
 - Add volatility regime classification as a second ML task
 
-## Why This Project Works For Interviews
-
-This repository demonstrates:
-
-- EDA on financial time series
-- domain-specific feature engineering
-- risk and portfolio analytics
-- time-series-aware model evaluation
-- interpretable machine learning
-- API integration with unstable public data sources
-- a practical backtesting loop
-- clean communication between backend analytics and frontend visualization
