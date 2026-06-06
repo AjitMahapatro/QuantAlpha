@@ -1,8 +1,7 @@
 # QuantAlpha
 
-QuantAlpha is a quantitative financial analytics and risk analysis platform built to demonstrate a realistic end-to-end data science workflow on public market data. The project combines historical equity prices from `yfinance`, macroeconomic indicators from FRED, feature engineering for time-series modeling, a transparent XGBoost classification pipeline, and a simple rules-based backtesting engine.
+QuantAlpha is a full-stack financial analytics platform that combines market data engineering, machine learning, risk analytics, and backend services to deliver investment research insights. The platform integrates historical equity prices, macroeconomic indicators, feature engineering pipelines, predictive modeling, and strategy backtesting through a FastAPI backend and React-based frontend.
 
-The goal is not to look like a startup dashboard. The goal is to show how a student can structure a practical financial analytics project that is readable, modular, and strong enough to discuss in interviews.
 
 ## Business Problem
 
