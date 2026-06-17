@@ -18,6 +18,7 @@ from backend.services.ml_service import train_direction_model
 
 
 def _series_payload(series: pd.Series, decimals: int = 6) -> list[float]:
+    """Helper to format a pandas Series for JSON serialization."""
     return series.fillna(0.0).round(decimals).tolist()
 
 
@@ -26,11 +27,17 @@ def build_platform_snapshot(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, object]:
+    """
+    The main orchestration function. It runs the entire analytics pipeline and
+    assembles the final JSON object for the frontend.
+    """
+    # 1. Normalize inputs and fetch all required raw data.
     selected_tickers, start, end = normalize_inputs(tickers, start_date, end_date)
     prices = fetch_price_data(selected_tickers, start, end)
     benchmark = fetch_benchmark_data(start, end)
     macro = fetch_macro_data(start, end)
 
+    # 2. Loop through each ticker to generate its feature set.
     benchmark_returns = benchmark.pct_change().rename("benchmark_return")
     feature_map: dict[str, pd.DataFrame] = {}
 
@@ -44,6 +51,7 @@ def build_platform_snapshot(
             volume_series=volume,
         )
 
+    # 3. Calculate baseline portfolio analytics (equal-weight).
     asset_returns = prices.pct_change().dropna(how="all")
     equal_weight_returns = asset_returns.mean(axis=1).fillna(0.0)
     benchmark_aligned_returns = benchmark.pct_change().reindex(equal_weight_returns.index).fillna(0.0)
@@ -52,6 +60,7 @@ def build_platform_snapshot(
 
     portfolio_metrics = summarize_performance(equal_weight_returns, benchmark_aligned_returns, RISK_FREE_RATE)
     weights = {ticker: round(100 / len(selected_tickers), 2) for ticker in selected_tickers}
+    # Simple risk contribution based on un-diversified standard deviation.
     risk_contribution = {
         ticker: float((asset_returns[ticker].std() / asset_returns.std().sum()) * 100)
         if asset_returns[ticker].std() and asset_returns.std().sum()
@@ -59,15 +68,19 @@ def build_platform_snapshot(
         for ticker in selected_tickers
     }
 
+    # 4. Run the more complex modules: backtesting and ML forecasting.
     first_ticker = selected_tickers[0]
     first_features = feature_map[first_ticker]
     backtest = run_backtest(prices, benchmark, feature_map, RISK_FREE_RATE)
+    # The ML model is trained on-the-fly for the first ticker in the list.
     ml_results = train_direction_model(first_features, first_ticker)
 
+    # 5. Prepare and structure all data into a final dictionary for the API response.
     rolling_volatility = (equal_weight_returns.rolling(21).std() * np.sqrt(252)).reindex(prices.index).fillna(0.0)
     return_distribution = equal_weight_returns.dropna()
     cumulative_returns = prices.divide(prices.iloc[0]).subtract(1.0).dropna(how="all")
 
+    # This structure maps directly to the pages/components on the frontend.
     market_overview = {
         "tickers": selected_tickers,
         "dates": cumulative_returns.index.strftime("%Y-%m-%d").tolist(),
