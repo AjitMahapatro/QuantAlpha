@@ -4,3 +4,7 @@ __pycache__/
 node_modules/
 .env
 dist/
+
+# Ignore generated machine learning model artifacts
+backend/models/*.pkl
+backend/models/*.json

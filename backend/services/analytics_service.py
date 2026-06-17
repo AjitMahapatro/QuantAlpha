@@ -47,7 +47,7 @@ def summarize_performance(
     returns: pd.Series,
     benchmark_returns: pd.Series,
     risk_free_rate: float = 0.02,
-) -> dict[str, float]:
+) -> dict[str, float]:    
     curve = (1 + returns).cumprod()
     drawdown = calculate_drawdown(curve)
     beta, alpha = calculate_beta_alpha(returns, benchmark_returns)
